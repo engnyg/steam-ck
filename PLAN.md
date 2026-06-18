@@ -114,7 +114,6 @@ OpenSteamUnlocker.sln
 
 ## 5. 風險與注意事項
 
-- **法律/條款**：解鎖未擁有遊戲違反 Steam 服務條款，僅作技術整合；不處理付費/破解 DRM 的惡意用途
 - **工作量**：後端移植（Phase 1）是主要成本；4025 行 Python，建議先做 MVP（CaiGames + SteamCMD + GitHub 兩三個來源 + 入庫）再擴充
 - **OpenSteamTool 仍須 C++ 編譯**：需 CMake 工具鏈或 CI 預編譯 DLL；C# 端只負責部署與設定
 - **版權/授權**：合併前確認兩專案 LICENSE 相容（OpenSteamTool 與 Fluent-Install 各自授權），並保留原作者標示
