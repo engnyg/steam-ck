@@ -6,21 +6,178 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     Title="MultiplayerPage"
-    d:DesignHeight="600"
-    d:DesignWidth="900"
+    d:DesignHeight="720"
+    d:DesignWidth="1000"
     mc:Ignorable="d">
 
-    <StackPanel Margin="24">
-        <TextBlock
-            FontSize="28"
-            FontWeight="SemiBold"
-            Text="多人遊戲" />
-        <StackPanel Margin="0,16,0,0" Orientation="Horizontal">
-            <TextBlock VerticalAlignment="Center" Text="AppID" />
-            <ui:TextBox
-                Width="160"
-                Margin="12,0,0,0"
-                Text="{Binding ViewModel.AppId, UpdateSourceTrigger=PropertyChanged}" />
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,24,24,32">
+
+            <TextBlock
+                FontSize="28"
+                FontWeight="SemiBold"
+                Text="多人遊戲（LAN 模擬）" />
+
+            <!--  Goldberg info banner  -->
+            <ui:InfoBar
+                Margin="0,12,0,0"
+                IsClosable="False"
+                IsOpen="True"
+                Message="此功能使用 Goldberg Steam Emulator 實現本地 LAN 多人遊玩。點擊「下載 Goldberg」取得 steam_api(64).dll，並手動複製到遊戲目錄後再啟動。"
+                Severity="Informational"
+                Title="使用說明" />
+
+            <!--  Game setup  -->
+            <ui:CardExpander
+                Margin="0,16,0,0"
+                IsExpanded="True">
+                <ui:CardExpander.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Margin="0,0,10,0" Symbol="Games24" />
+                        <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="遊戲設定" />
+                    </StackPanel>
+                </ui:CardExpander.Header>
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Grid.Column="0"
+                            VerticalAlignment="Center"
+                            Width="80"
+                            Text="AppID" />
+                        <ui:TextBox
+                            Grid.Column="1"
+                            PlaceholderText="例如 480"
+                            Text="{Binding ViewModel.AppId, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Grid.Column="0"
+                            VerticalAlignment="Center"
+                            Width="80"
+                            Text="遊戲路徑" />
+                        <ui:TextBox
+                            Grid.Column="1"
+                            IsReadOnly="True"
+                            PlaceholderText="（點擊瀏覽選擇 .exe）"
+                            Text="{Binding ViewModel.GameExePath, Mode=OneWay}" />
+                        <ui:Button
+                            Grid.Column="2"
+                            Margin="8,0,0,0"
+                            Command="{Binding ViewModel.BrowseGameCommand}"
+                            Content="瀏覽…"
+                            Icon="{ui:SymbolIcon FolderOpen24}" />
+                    </Grid>
+                </StackPanel>
+            </ui:CardExpander>
+
+            <!--  Player settings  -->
+            <ui:CardExpander
+                Margin="0,10,0,0"
+                IsExpanded="True">
+                <ui:CardExpander.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Margin="0,0,10,0" Symbol="Person24" />
+                        <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="玩家設定" />
+                    </StackPanel>
+                </ui:CardExpander.Header>
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Grid.Column="0"
+                            VerticalAlignment="Center"
+                            Width="100"
+                            Text="玩家名稱" />
+                        <ui:TextBox
+                            Grid.Column="1"
+                            PlaceholderText="Player"
+                            Text="{Binding ViewModel.PlayerName, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            Grid.Column="0"
+                            VerticalAlignment="Center"
+                            Width="100"
+                            Text="Steam ID" />
+                        <ui:TextBox
+                            Grid.Column="1"
+                            PlaceholderText="76561198000000000"
+                            Text="{Binding ViewModel.SteamId, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+                    <ui:ToggleSwitch
+                        Margin="0,10,0,0"
+                        Content="離線模式（不嘗試連線 Steam 伺服器）"
+                        IsChecked="{Binding ViewModel.OfflineMode}" />
+                    <TextBlock
+                        Margin="0,6,0,0"
+                        FontSize="11"
+                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                        Text="每個同局的玩家需使用不同的 Steam ID 以避免衝突。" />
+                </StackPanel>
+            </ui:CardExpander>
+
+            <!--  Actions  -->
+            <ui:Card Margin="0,10,0,0">
+                <StackPanel>
+                    <TextBlock FontWeight="SemiBold" Text="操作" />
+                    <WrapPanel Margin="0,10,0,0">
+                        <ui:Button
+                            Margin="0,0,8,8"
+                            Appearance="Primary"
+                            Command="{Binding ViewModel.GenerateConfigCommand}"
+                            Content="產生設定檔"
+                            Icon="{ui:SymbolIcon DocumentAdd24}"
+                            IsEnabled="{Binding ViewModel.IsBusy, Converter={StaticResource InverseBool}}" />
+                        <ui:Button
+                            Margin="0,0,8,8"
+                            Command="{Binding ViewModel.OpenGoldbergDownloadCommand}"
+                            Content="下載 Goldberg"
+                            Icon="{ui:SymbolIcon ArrowDownload24}" />
+                        <ui:Button
+                            Margin="0,0,8,8"
+                            Appearance="Success"
+                            Command="{Binding ViewModel.LaunchGameCommand}"
+                            Content="啟動遊戲"
+                            Icon="{ui:SymbolIcon Play24}" />
+                        <ui:Button
+                            Margin="0,0,8,8"
+                            Command="{Binding ViewModel.OpenConfigFolderCommand}"
+                            Content="開啟設定資料夾"
+                            Icon="{ui:SymbolIcon FolderOpen24}" />
+                    </WrapPanel>
+                </StackPanel>
+            </ui:Card>
+
+            <!--  Result banners  -->
+            <ui:InfoBar
+                Margin="0,10,0,0"
+                IsOpen="{Binding ViewModel.ShowSuccess}"
+                Message="{Binding ViewModel.ResultText}"
+                Severity="Success"
+                Title="完成" />
+            <ui:InfoBar
+                Margin="0,10,0,0"
+                IsOpen="{Binding ViewModel.ShowError}"
+                Message="{Binding ViewModel.ResultText}"
+                Severity="Error"
+                Title="錯誤" />
+
         </StackPanel>
-    </StackPanel>
+    </ScrollViewer>
 </Page>
