@@ -1,0 +1,4 @@
+C:\Users\666\Desktop\github\open67\publish\win-x64\OpenSteamUnlocker.pdb
+C:\Users\666\Desktop\github\open67\publish\win-x64\engine\README.md
+C:\Users\666\Desktop\github\open67\publish\win-x64\OpenSteamUnlocker.Core.pdb
+C:\Users\666\Desktop\github\open67\publish\win-x64\OpenSteamUnlocker.exe
