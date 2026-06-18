@@ -9,19 +9,32 @@ namespace OpenSteamUnlocker.Core.Manifest.Services;
 /// <summary>
 /// Orchestrates the full manifest install pipeline.
 ///
-/// Priority:
-///   1. GitHub repos — key.vdf depot keys + *.manifest binary files.
-///   2. Sudama API  — depot keys from the Sudama database, manifest IDs from
-///      CaiGames/SteamCMD (no binary manifests required).
+/// Flow (Sudama-first):
+///   0. Pre-fetch depot key database (Sudama + ManifestHub) — always, eagerly.
+///   1. Fetch depot/manifest-ID data from CaiGames/SteamCMD API.
+///   2. Match depot IDs to keys from step 0.
+///   3. Try GitHub repos to supplement: fill remaining key gaps from key.vdf,
+///      update manifest IDs, and download binary *.manifest files.
+///   4. Write Lua script; copy manifest files to depotcache.
 ///
-/// In both cases the result is an OpenSteamTool-compatible Lua script written
-/// to <c>&lt;Steam&gt;/config/lua/{appId}.lua</c>, plus optional depot-cache
-/// manifest copies and free-DLC addappid lines.
+/// Sudama keys are pre-fetched once and reused across all sub-steps, so
+/// ManifestAutoUpdate repos (which carry only .manifest, no key.vdf) still
+/// receive correct decryption keys from the database.
 /// </summary>
 public sealed class ManifestInstaller : IManifestInstaller
 {
-    // First repo tried for every install; custom repos come before this one.
-    private const string DefaultRepo = "SteamAutoCracks/ManifestHub";
+    // Repos with per-AppID branches (branch name = appId) containing Key.vdf + *.manifest.
+    // SteamAutoCracks/ManifestHub and SSMGAlt/ManifestHub2 are excluded — they only have
+    // a global main branch with depotkeys.json (covered by DepotKeyService / Sudama).
+    private static readonly IReadOnlyList<string> DefaultRepos =
+    [
+        "Auiowu/ManifestAutoUpdate",
+        "BlankTMing/ManifestAutoUpdate",
+        "tymolu233/ManifestAutoUpdate-fix",
+        "isKoi/ManifestAutoUpdate",
+        "pjy612/SteamManifestCache",
+        "ikun0014/ManifestHub",
+    ];
 
     private readonly IGitHubManifestProvider _github;
     private readonly ISteamDataService       _steamData;
@@ -50,105 +63,118 @@ public sealed class ManifestInstaller : IManifestInstaller
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(appId))
-            return Fail(appId, "AppID cannot be empty.");
+            return Fail(appId, "AppID 不能為空。");
 
         if (!_locator.IsInstalled)
-            return Fail(appId, "Steam installation not found.");
+            return Fail(appId, "找不到 Steam 安裝。");
 
-        // Build the ordered list of GitHub repos to try.
+        // ── Step 0: Pre-fetch depot key database (Sudama-first) ───────────────
+        // Done eagerly so every subsequent step can use the same in-memory cache.
+        progress?.Report("正在載入 Sudama 解密金鑰庫…");
+        var allDepotKeys = await _depotKeys.GetAllKeysAsync(ct);
+        progress?.Report($"金鑰庫載入完成，共 {allDepotKeys.Count:N0} 個金鑰。");
+
+        // ── Step 1: Fetch depot/manifest-ID list from CaiGames/SteamCMD ───────
+        progress?.Report("正在從 API 取得遊戲 depot 清單…");
+        var apiDepots = await _steamData.GetDepotsAsync(appId, ct);
+
+        // Build the initial depot list using API manifest IDs + Sudama keys.
+        var depots = apiDepots
+            .Select(d => new DepotInfo(
+                d.DepotId,
+                allDepotKeys.TryGetValue(d.DepotId, out var k) && IsValidDepotKey(k) ? k : null,
+                d.ManifestId))
+            .ToList();
+
+        var sudamaKeyCount = depots.Count(d => IsValidDepotKey(d.DecryptionKey));
+        progress?.Report($"API 找到 {depots.Count} 個 depot，Sudama 提供 {sudamaKeyCount} 個解密金鑰。");
+
+        // ── Step 2: Try GitHub repos — supplement keys + get manifest files ────
         var repos = new List<string>();
         if (options.ExtraGitHubRepos is { Count: > 0 } extra)
             repos.AddRange(extra);
-        repos.Add(DefaultRepo);
+        repos.AddRange(DefaultRepos);
 
-        // ── 1. Try GitHub repos ───────────────────────────────────────────────
+        List<GitHubManifestFile> manifestFiles = [];
+        string? gitHubRepo = null;
+
         foreach (var repo in repos)
         {
-            progress?.Report($"Checking {repo}…");
+            progress?.Report($"正在從 {repo} 取得 manifest 資料…");
             var data = await _github.FetchAsync(
                 appId, repo, options.GithubPersonalToken,
                 skipManifestFiles: options.AutoUpdate, ct);
 
             if (data is null) continue;
 
-            progress?.Report("Writing Lua script…");
-            var depots = data.DepotKeys
-                .Select(kv =>
-                {
-                    // Try to pair with a manifest from the downloaded files
-                    var mf = data.ManifestFiles.FirstOrDefault(f => f.DepotId == kv.Key);
-                    return new DepotInfo(kv.Key, kv.Value, mf?.ManifestId);
-                })
-                .ToList();
+            // Merge key.vdf keys: fill any depot still missing a valid key.
+            foreach (var (depotId, vdfKey) in data.DepotKeys)
+            {
+                if (!IsValidDepotKey(vdfKey)) continue;
+                var idx = depots.FindIndex(d => d.DepotId == depotId);
+                if (idx >= 0 && !IsValidDepotKey(depots[idx].DecryptionKey))
+                    depots[idx] = depots[idx] with { DecryptionKey = vdfKey };
+                else if (idx < 0)
+                    depots.Add(new DepotInfo(depotId, vdfKey, null));
+            }
 
-            // Depots with no key but with a manifest (rare — include manifest ID only)
+            // Merge manifest files: update manifest IDs and collect binary files.
             foreach (var mf in data.ManifestFiles)
             {
-                if (!data.DepotKeys.ContainsKey(mf.DepotId))
-                    depots.Add(new DepotInfo(mf.DepotId, null, mf.ManifestId));
+                var idx = depots.FindIndex(d => d.DepotId == mf.DepotId);
+                if (idx >= 0)
+                    depots[idx] = depots[idx] with { ManifestId = mf.ManifestId };
+                else
+                    depots.Add(new DepotInfo(mf.DepotId,
+                        allDepotKeys.TryGetValue(mf.DepotId, out var mk) && IsValidDepotKey(mk) ? mk : null,
+                        mf.ManifestId));
             }
 
-            var lua = LuaManifestBuilder.Build(appId, depots, options.AutoUpdate);
-
-            if (options.AddFreeDlc)
+            if (data.ManifestFiles.Count > 0)
             {
-                progress?.Report("Fetching DLC list…");
-                var dlcIds = await _steamData.GetDlcIdsAsync(appId, ct);
-                if (dlcIds.Count > 0)
-                    lua = LuaManifestBuilder.AppendFreeDlc(lua, dlcIds);
+                manifestFiles = [.. data.ManifestFiles];
+                gitHubRepo    = repo;
+                break; // first repo with actual files is sufficient
             }
-
-            await _engine.WriteLuaAsync(appId, lua, ct);
-
-            int copied = 0;
-            if (!options.AutoUpdate && data.ManifestFiles.Count > 0)
-            {
-                progress?.Report("Copying manifest files…");
-                copied = await CopyManifestFilesAsync(data.ManifestFiles, ct);
-            }
-
-            var luaPath = Path.Combine(_locator.LuaConfigPath!, $"{appId}.lua");
-            progress?.Report("Done.");
-            return new ManifestInstallResult(
-                Success: true, AppId: appId,
-                LuaPath: luaPath, ManifestsCopied: copied,
-                DlcsAdded: CountDlcLines(lua), ProviderUsed: repo);
         }
 
-        // ── 2. Sudama API fallback ─────────────────────────────────────────────
-        progress?.Report("Fetching depot data from API…");
-        var apiDepots = await _steamData.GetDepotsAsync(appId, ct);
-        if (apiDepots.Count == 0)
-            return Fail(appId, "No depot data found in any source.");
+        if (depots.Count == 0)
+            return Fail(appId, "所有來源均找不到此遊戲的 depot 資料。");
 
-        progress?.Report("Loading depot keys…");
-        var allKeys = await _depotKeys.GetAllKeysAsync(ct);
+        // ── Step 3: Write Lua + copy manifests ────────────────────────────────
+        var totalKeys = depots.Count(d => IsValidDepotKey(d.DecryptionKey));
+        progress?.Report($"共 {totalKeys}/{depots.Count} 個 depot 有解密金鑰，正在寫入 Lua…");
 
-        var matchedDepots = apiDepots
-            .Select(d => new DepotInfo(
-                d.DepotId,
-                allKeys.TryGetValue(d.DepotId, out var key) ? key : null,
-                d.ManifestId))
-            .ToList();
-
-        var apiLua = LuaManifestBuilder.Build(appId, matchedDepots, options.AutoUpdate);
+        var lua = LuaManifestBuilder.Build(appId, depots, options.AutoUpdate);
 
         if (options.AddFreeDlc)
         {
-            progress?.Report("Fetching DLC list…");
+            progress?.Report("正在取得 DLC 清單…");
             var dlcIds = await _steamData.GetDlcIdsAsync(appId, ct);
             if (dlcIds.Count > 0)
-                apiLua = LuaManifestBuilder.AppendFreeDlc(apiLua, dlcIds);
+                lua = LuaManifestBuilder.AppendFreeDlc(lua, dlcIds);
         }
 
-        await _engine.WriteLuaAsync(appId, apiLua, ct);
-        progress?.Report("Done.");
+        await _engine.WriteLuaAsync(appId, lua, ct);
 
+        int copied = 0;
+        if (!options.AutoUpdate && manifestFiles.Count > 0)
+        {
+            progress?.Report("正在複製 manifest 檔案到 depotcache…");
+            copied = await CopyManifestFilesAsync(manifestFiles, ct);
+        }
+
+        var provider = gitHubRepo is not null
+            ? $"Sudama + {gitHubRepo}"
+            : "Sudama API";
+
+        progress?.Report("完成。");
         return new ManifestInstallResult(
             Success: true, AppId: appId,
             LuaPath: Path.Combine(_locator.LuaConfigPath!, $"{appId}.lua"),
-            ManifestsCopied: 0, DlcsAdded: CountDlcLines(apiLua),
-            ProviderUsed: "Sudama API");
+            ManifestsCopied: copied,
+            DlcsAdded: CountDlcLines(lua),
+            ProviderUsed: provider);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -189,4 +215,9 @@ public sealed class ManifestInstaller : IManifestInstaller
 
     private static int CountDlcLines(string lua) =>
         lua.Split('\n').Count(l => l.StartsWith("addappid(", StringComparison.Ordinal));
+
+    // Steam depot keys are 32-byte AES keys encoded as 64 hex characters.
+    // OpenSteamTool silently drops keys that are not exactly 64 chars.
+    private static bool IsValidDepotKey(string? key) =>
+        key is { Length: 64 } && key.All(Uri.IsHexDigit);
 }
