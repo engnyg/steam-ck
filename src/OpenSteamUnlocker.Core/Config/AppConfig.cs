@@ -77,6 +77,13 @@ public sealed class AppConfig
 
     [JsonPropertyName("patch_manifest_default")]
     public bool PatchManifestDefault { get; set; }
+
+    /// <summary>
+    /// GitHub repo slug ("owner/repo") to poll for new releases.
+    /// Empty string disables the auto-update check.
+    /// </summary>
+    [JsonPropertyName("update_repo_slug")]
+    public string UpdateRepoSlug { get; set; } = string.Empty;
 }
 
 public sealed class CustomRepos

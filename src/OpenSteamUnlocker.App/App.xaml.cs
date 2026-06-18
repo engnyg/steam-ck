@@ -12,6 +12,7 @@ using OpenSteamUnlocker.Core.Http;
 using OpenSteamUnlocker.Core.Manifest.Providers;
 using OpenSteamUnlocker.Core.Manifest.Services;
 using OpenSteamUnlocker.Core.Steam;
+using OpenSteamUnlocker.Core.Update;
 using Wpf.Ui;
 using Wpf.Ui.DependencyInjection;
 
@@ -75,6 +76,12 @@ public partial class App : Application
                     sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                     sp.GetRequiredService<IGitHubMirrorClient>()));
             services.AddSingleton<IManifestInstaller, ManifestInstaller>();
+
+            // Phase 5: auto-update check
+            services.AddSingleton<IUpdateService>(sp =>
+                new UpdateService(
+                    sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+                    sp.GetRequiredService<IConfigService>()));
         })
         .Build();
 

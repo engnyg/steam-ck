@@ -32,6 +32,10 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool   _loggingFiles = true;
     [ObservableProperty] private string _language     = "system";
 
+    // ── Update ────────────────────────────────────────────────────────────────
+
+    [ObservableProperty] private string _updateRepoSlug  = string.Empty;
+
     // ── Save state ────────────────────────────────────────────────────────────
 
     [ObservableProperty] private bool   _isBusy;
@@ -63,6 +67,7 @@ public partial class SettingsViewModel : ObservableObject
             cfg.DebugMode            = DebugMode;
             cfg.LoggingFiles         = LoggingFiles;
             cfg.Language             = Language;
+            cfg.UpdateRepoSlug       = UpdateRepoSlug;
             await _config.SaveAsync();
 
             SavedMessage   = "設定已儲存。";
@@ -94,5 +99,6 @@ public partial class SettingsViewModel : ObservableObject
         DebugMode            = cfg.DebugMode;
         LoggingFiles         = cfg.LoggingFiles;
         Language             = cfg.Language;
+        UpdateRepoSlug       = cfg.UpdateRepoSlug;
     }
 }

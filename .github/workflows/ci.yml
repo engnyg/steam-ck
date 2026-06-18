@@ -3,12 +3,12 @@ name: CI
 on:
   push:
     branches: [main, master]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
 jobs:
-  # Builds the native OpenSteamTool engine on a runner that has the full
-  # Windows SDK (rc.exe/mt.exe) + MSVC toolchain, which local dev boxes may lack.
+  # ── Build native OpenSteamTool engine (needs MSVC + Windows SDK) ───────────
   engine:
     runs-on: windows-latest
     steps:
@@ -31,7 +31,7 @@ jobs:
           name: engine-dlls
           path: src/OpenSteamUnlocker.App/engine/*.dll
 
-  # Builds the WPF app, bundling the engine DLLs produced above.
+  # ── Build & publish WPF app ────────────────────────────────────────────────
   app:
     needs: engine
     runs-on: windows-latest
@@ -42,6 +42,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Restore NuGet packages
+        run: dotnet restore OpenSteamUnlocker.sln
+
       - name: Download engine binaries
         uses: actions/download-artifact@v4
         with:
@@ -49,17 +52,51 @@ jobs:
           path: src/OpenSteamUnlocker.App/engine
 
       - name: Build solution
-        run: dotnet build OpenSteamUnlocker.sln -c Release
+        run: dotnet build OpenSteamUnlocker.sln -c Release --no-restore
 
-      - name: Publish (single-file, self-contained)
+      - name: Publish (single-file, self-contained, win-x64)
         run: >
           dotnet publish src/OpenSteamUnlocker.App/OpenSteamUnlocker.App.csproj
           -c Release -r win-x64 --self-contained true
           -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DebugType=none
           -o publish
 
-      - name: Upload app
+      - name: Compute SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash publish/OpenSteamUnlocker.exe -Algorithm SHA256).Hash
+          Set-Content publish/OpenSteamUnlocker.exe.sha256 "SHA256: $hash  OpenSteamUnlocker.exe"
+          Write-Host "SHA256: $hash"
+
+      - name: Upload app artifact
         uses: actions/upload-artifact@v4
         with:
           name: OpenSteamUnlocker
+          path: |
+            publish/OpenSteamUnlocker.exe
+            publish/OpenSteamUnlocker.exe.sha256
+
+  # ── Create GitHub Release on version tags ─────────────────────────────────
+  release:
+    needs: app
+    runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download app artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: OpenSteamUnlocker
           path: publish
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OpenSteam Unlocker ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            publish/OpenSteamUnlocker.exe
+            publish/OpenSteamUnlocker.exe.sha256

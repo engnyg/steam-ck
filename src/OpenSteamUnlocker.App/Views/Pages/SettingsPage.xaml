@@ -141,6 +141,33 @@
                     </StackPanel>
                 </ui:CardExpander>
 
+                <!--  自動更新  -->
+                <ui:CardExpander
+                    Margin="0,0,0,10"
+                    IsExpanded="False">
+                    <ui:CardExpander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Margin="0,0,10,0" Symbol="ArrowSync24" />
+                            <TextBlock VerticalAlignment="Center" Text="自動更新" />
+                        </StackPanel>
+                    </ui:CardExpander.Header>
+                    <StackPanel>
+                        <TextBlock
+                            Margin="0,0,0,4"
+                            FontSize="12"
+                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                            Text="GitHub 儲存庫位址（owner/repo 格式）。留空停用更新檢查。" />
+                        <ui:TextBox
+                            PlaceholderText="例如 YourName/OpenSteamUnlocker"
+                            Text="{Binding ViewModel.UpdateRepoSlug, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock
+                            Margin="0,6,0,0"
+                            FontSize="11"
+                            Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                            Text="程式啟動時自動呼叫 GitHub Releases API，若有新版本將在視窗頂部顯示通知橫幅。" />
+                    </StackPanel>
+                </ui:CardExpander>
+
                 <!--  應用程式  -->
                 <ui:CardExpander
                     Margin="0,0,0,10"

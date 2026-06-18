@@ -20,6 +20,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -32,9 +33,50 @@
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 
+        <!--  Update available banner  -->
+        <Border
+            Grid.Row="1"
+            Background="#1A2E7D32"
+            Visibility="{Binding ViewModel.ShowUpdateBanner, Converter={StaticResource BoolToVis}}">
+            <Grid Margin="16,6,16,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" Orientation="Horizontal">
+                    <ui:SymbolIcon
+                        Margin="0,0,8,0"
+                        Foreground="#4CAF50"
+                        Symbol="ArrowSync24" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontWeight="SemiBold"
+                        Foreground="#4CAF50"
+                        Text="{Binding ViewModel.UpdateBannerTitle}" />
+                    <TextBlock
+                        Margin="8,0,0,0"
+                        VerticalAlignment="Center"
+                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                        Text="— 點擊下載以更新" />
+                </StackPanel>
+                <ui:Button
+                    Grid.Column="1"
+                    Margin="0,0,6,0"
+                    Appearance="Primary"
+                    Command="{Binding ViewModel.OpenUpdateDownloadCommand}"
+                    Content="下載更新"
+                    Icon="{ui:SymbolIcon ArrowDownload24}" />
+                <ui:Button
+                    Grid.Column="2"
+                    Command="{Binding ViewModel.DismissUpdateCommand}"
+                    Content="稍後" />
+            </Grid>
+        </Border>
+
         <ui:NavigationView
             x:Name="RootNavigation"
-            Grid.Row="1"
+            Grid.Row="2"
             IsBackButtonVisible="Visible"
             IsPaneToggleVisible="True"
             PaneDisplayMode="Left">
@@ -89,6 +131,6 @@
         <ContentPresenter
             x:Name="RootContentDialog"
             Grid.Row="0"
-            Grid.RowSpan="2" />
+            Grid.RowSpan="3" />
     </Grid>
 </ui:FluentWindow>
