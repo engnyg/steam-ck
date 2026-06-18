@@ -23,58 +23,74 @@ public partial class SearchViewModel : ObservableObject
         _config    = config;
     }
 
-    // ── Search inputs ─────────────────────────────────────────────────────────
+    // ── Inputs ────────────────────────────────────────────────────────────────
 
-    [ObservableProperty] private string _query = string.Empty;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand))]
+    private string _query = string.Empty;
 
-    // ── Install options ───────────────────────────────────────────────────────
-
-    [ObservableProperty] private bool _addAllDlc    = true;
-    [ObservableProperty] private bool _autoUpdate   = false;
+    [ObservableProperty] private bool _autoUpdate  = false;
+    [ObservableProperty] private bool _addAllDlc   = true;
 
     // ── State ─────────────────────────────────────────────────────────────────
 
-    [ObservableProperty] private bool   _isBusy      = false;
-    [ObservableProperty] private string _statusText  = string.Empty;
-    [ObservableProperty] private string _resultText  = string.Empty;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SearchCommand))]
+    [NotifyCanExecuteChangedFor(nameof(InstallCommand))]
+    private bool _isBusy;
+
+    [ObservableProperty] private string _statusText = string.Empty;
+
+    // Install result
+    [ObservableProperty] private bool   _showResultSuccess;
+    [ObservableProperty] private bool   _showResultError;
+    [ObservableProperty] private string _resultText = string.Empty;
 
     public ObservableCollection<GameInfo> SearchResults { get; } = new();
 
-    // ── Commands ──────────────────────────────────────────────────────────────
+    // ── Search ────────────────────────────────────────────────────────────────
 
     [RelayCommand(CanExecute = nameof(CanSearch))]
     private async Task SearchAsync()
     {
         IsBusy = true;
-        StatusText = "Searching…";
+        ShowResultSuccess = false;
+        ShowResultError   = false;
+        StatusText = "搜尋中…";
         SearchResults.Clear();
-        ResultText = string.Empty;
 
         try
         {
-            var term    = Query.Trim();
-            var appId   = _search.ExtractAppId(term);
-            var results = appId is not null
-                ? new[] { await GetSingleGameAsync(appId) }
-                : (await _search.SearchAsync(term)).ToArray();
+            var term  = Query.Trim();
+            var appId = _search.ExtractAppId(term);
 
-            foreach (var r in results)
-                if (r is not null) SearchResults.Add(r);
+            if (appId is not null)
+            {
+                // Bare AppID / URL — show a stub card immediately so the user
+                // can install without waiting for info lookup.
+                SearchResults.Add(new GameInfo(
+                    appId, $"AppID {appId}",
+                    $"https://cdn.cloudflare.steamstatic.com/steam/apps/{appId}/header.jpg"));
+            }
+            else
+            {
+                var results = await _search.SearchAsync(term);
+                foreach (var r in results)
+                    SearchResults.Add(r);
+            }
 
-            StatusText = SearchResults.Count == 0
-                ? "No results found."
-                : $"{SearchResults.Count} result(s)";
+            StatusText = SearchResults.Count == 0 ? "未找到結果。" : $"找到 {SearchResults.Count} 個結果";
         }
         catch (Exception ex)
         {
-            StatusText = $"Search failed: {ex.Message}";
+            StatusText = $"搜尋失敗：{ex.Message}";
         }
         finally { IsBusy = false; }
     }
 
     private bool CanSearch() => !IsBusy && !string.IsNullOrWhiteSpace(Query);
 
-    partial void OnQueryChanged(string value) => SearchCommand.NotifyCanExecuteChanged();
+    // ── Install ───────────────────────────────────────────────────────────────
 
     [RelayCommand(CanExecute = nameof(CanInstall))]
     private async Task InstallAsync(GameInfo? game)
@@ -82,50 +98,63 @@ public partial class SearchViewModel : ObservableObject
         if (game is null) return;
 
         IsBusy = true;
-        var progress = new Progress<string>(msg => StatusText = msg);
-        ResultText = string.Empty;
+        ShowResultSuccess = false;
+        ShowResultError   = false;
+        ResultText        = string.Empty;
+        var progress      = new Progress<string>(msg => StatusText = msg);
 
         try
         {
             var cfg     = _config.Current;
             var options = new ManifestInstallOptions(
-                AutoUpdate: AutoUpdate,
-                AddFreeDlc: AddAllDlc,
+                AutoUpdate:         AutoUpdate,
+                AddFreeDlc:         AddAllDlc,
                 GithubPersonalToken: cfg.GithubPersonalToken,
-                ExtraGitHubRepos: cfg.CustomRepos?.Github?
+                ExtraGitHubRepos:   cfg.CustomRepos.Github
+                    .Where(r => !string.IsNullOrWhiteSpace(r.Repo))
                     .Select(r => r.Repo)
-                    .Where(r => !string.IsNullOrEmpty(r))
                     .ToList());
 
             var result = await _installer.InstallAsync(game.AppId, options, progress);
-            ResultText = result.Success
-                ? $"✓ {game.Name} installed via {result.ProviderUsed}." +
-                  (result.ManifestsCopied > 0 ? $" {result.ManifestsCopied} manifest(s) copied." : "") +
-                  (result.DlcsAdded > 0 ? $" {result.DlcsAdded} DLC(s) added." : "")
-                : $"✗ {result.Error}";
+
+            if (result.Success)
+            {
+                ShowResultSuccess = true;
+                ResultText = BuildSuccessMessage(game.Name, result);
+            }
+            else
+            {
+                ShowResultError = true;
+                ResultText = result.Error ?? "安裝失敗，原因不明。";
+            }
         }
         catch (Exception ex)
         {
-            ResultText = $"✗ {ex.Message}";
+            ShowResultError = true;
+            ResultText      = ex.Message;
         }
         finally
         {
-            IsBusy = false;
+            IsBusy     = false;
             StatusText = string.Empty;
         }
     }
 
     private bool CanInstall(GameInfo? _) => !IsBusy;
 
+    public void DismissResult()
+    {
+        ShowResultSuccess = false;
+        ShowResultError   = false;
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private async Task<GameInfo?> GetSingleGameAsync(string appId)
+    private static string BuildSuccessMessage(string name, ManifestInstallResult r)
     {
-        // If the user typed a bare AppID or URL, look up the game name.
-        var existing = SearchResults.FirstOrDefault(g => g.AppId == appId);
-        if (existing is not null) return existing;
-
-        // Fall back to a stub — the install flow doesn't require the name.
-        return new GameInfo(appId, $"AppID {appId}");
+        var parts = new List<string> { $"《{name}》 已透過 {r.ProviderUsed} 入庫。" };
+        if (r.ManifestsCopied > 0) parts.Add($"複製了 {r.ManifestsCopied} 個 manifest 檔案。");
+        if (r.DlcsAdded > 0)       parts.Add($"加入了 {r.DlcsAdded} 個 DLC。");
+        return string.Join(" ", parts);
     }
 }

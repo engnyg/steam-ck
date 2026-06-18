@@ -6,39 +6,134 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     Title="SearchPage"
-    d:DesignHeight="600"
-    d:DesignWidth="900"
+    d:DesignHeight="720"
+    d:DesignWidth="1000"
     mc:Ignorable="d">
 
-    <Grid Margin="24">
+    <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock
-            Grid.Row="0"
-            FontSize="28"
-            FontWeight="SemiBold"
-            Text="搜尋入庫" />
+        <!--  Fixed header  -->
+        <StackPanel Grid.Row="0" Margin="24,24,24,0">
 
-        <StackPanel Grid.Row="1" Margin="0,16,0,0" Orientation="Horizontal">
-            <ui:TextBox
-                Width="360"
-                PlaceholderText="輸入遊戲名稱或 AppID"
-                Text="{Binding ViewModel.Query, UpdateSourceTrigger=PropertyChanged}" />
-            <ui:Button
-                Margin="12,0,0,0"
-                Appearance="Primary"
-                Content="搜尋"
-                Icon="{ui:SymbolIcon Search24}" />
+            <TextBlock
+                FontSize="28"
+                FontWeight="SemiBold"
+                Text="搜尋入庫" />
+
+            <!--  Search bar  -->
+            <Grid Margin="0,16,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:TextBox
+                    x:Name="SearchBox"
+                    Grid.Column="0"
+                    IsEnabled="{Binding ViewModel.IsBusy, Converter={StaticResource InverseBool}}"
+                    KeyDown="SearchBox_KeyDown"
+                    PlaceholderText="輸入遊戲名稱或 AppID…"
+                    Text="{Binding ViewModel.Query, UpdateSourceTrigger=PropertyChanged}" />
+                <ui:Button
+                    Grid.Column="1"
+                    Margin="10,0,0,0"
+                    Appearance="Primary"
+                    Command="{Binding ViewModel.SearchCommand}"
+                    Content="搜尋"
+                    Icon="{ui:SymbolIcon Search24}" />
+            </Grid>
+
+            <!--  Install options  -->
+            <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
+                <ui:ToggleSwitch
+                    Content="自動更新（不鎖版本）"
+                    IsChecked="{Binding ViewModel.AutoUpdate}" />
+                <ui:ToggleSwitch
+                    Margin="24,0,0,0"
+                    Content="加入全部 DLC"
+                    IsChecked="{Binding ViewModel.AddAllDlc}" />
+            </StackPanel>
+
+            <!--  Progress banner  -->
+            <ui:InfoBar
+                Margin="0,8,0,0"
+                IsClosable="False"
+                IsOpen="{Binding ViewModel.IsBusy}"
+                Message="{Binding ViewModel.StatusText}"
+                Severity="Informational"
+                Title="處理中…" />
+
+            <!--  Success banner  -->
+            <ui:InfoBar
+                Margin="0,8,0,0"
+                IsOpen="{Binding ViewModel.ShowResultSuccess}"
+                Message="{Binding ViewModel.ResultText}"
+                Severity="Success"
+                Title="入庫成功" />
+
+            <!--  Error banner  -->
+            <ui:InfoBar
+                Margin="0,8,0,0"
+                IsOpen="{Binding ViewModel.ShowResultError}"
+                Message="{Binding ViewModel.ResultText}"
+                Severity="Error"
+                Title="入庫失敗" />
+
         </StackPanel>
 
-        <StackPanel Grid.Row="2" Margin="0,16,0,0">
-            <ui:ToggleSwitch Content="加入全部 DLC" IsChecked="{Binding ViewModel.AddAllDlc}" />
-            <ui:ToggleSwitch Content="修補 Depot Key" IsChecked="{Binding ViewModel.PatchDepotKey}" />
-            <ui:ToggleSwitch Content="修補 Manifest" IsChecked="{Binding ViewModel.PatchManifest}" />
-        </StackPanel>
+        <!--  Scrollable results  -->
+        <ScrollViewer
+            Grid.Row="1"
+            Margin="16,8,16,16"
+            VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding ViewModel.SearchResults}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Margin="8,4,8,4" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <ui:Card
+                            Margin="6"
+                            Width="200"
+                            Padding="0">
+                            <StackPanel>
+                                <Image
+                                    Height="93"
+                                    Stretch="UniformToFill"
+                                    Source="{Binding HeaderImageUrl, Converter={StaticResource UrlImageConverter}}" />
+                                <StackPanel Margin="10,8,10,10">
+                                    <TextBlock
+                                        MaxHeight="40"
+                                        FontWeight="SemiBold"
+                                        Text="{Binding Name}"
+                                        TextTrimming="CharacterEllipsis"
+                                        TextWrapping="Wrap"
+                                        ToolTip="{Binding Name}" />
+                                    <TextBlock
+                                        Margin="0,2,0,0"
+                                        FontSize="11"
+                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                        Text="{Binding AppId, StringFormat='AppID: {0}'}" />
+                                    <ui:Button
+                                        Margin="0,8,0,0"
+                                        HorizontalAlignment="Stretch"
+                                        Appearance="Primary"
+                                        Command="{Binding DataContext.ViewModel.InstallCommand,
+                                            RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        Content="安裝"
+                                        Icon="{ui:SymbolIcon ArrowDownload24}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </ui:Card>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
     </Grid>
 </Page>

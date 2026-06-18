@@ -6,58 +6,142 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     Title="HomePage"
-    d:DesignHeight="600"
-    d:DesignWidth="900"
+    d:DesignHeight="720"
+    d:DesignWidth="1000"
     mc:Ignorable="d">
 
-    <Grid Margin="24">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!--  Page header  -->
         <TextBlock
             Grid.Row="0"
+            Margin="24,24,24,0"
             FontSize="28"
             FontWeight="SemiBold"
-            Text="遊戲庫" />
+            Text="我的遊戲庫" />
 
-        <ui:Card Grid.Row="1" Margin="0,16,0,0">
+        <!--  Steam status card  -->
+        <ui:Card Grid.Row="1" Margin="24,16,24,0">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-
-                <ui:SymbolIcon
-                    Grid.Column="0"
-                    Margin="0,0,16,0"
-                    VerticalAlignment="Center"
-                    FontSize="32"
-                    Symbol="Games24" />
-
-                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock FontWeight="SemiBold" Text="Steam 安裝路徑" />
+                <StackPanel Grid.Column="0">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon
+                            Margin="0,0,8,0"
+                            Foreground="{DynamicResource SystemAccentColorPrimaryBrush}"
+                            Symbol="Games24" />
+                        <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="Steam" />
+                        <Border
+                            Margin="8,0,0,0"
+                            Padding="6,2"
+                            VerticalAlignment="Center"
+                            CornerRadius="4">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ViewModel.SteamInstalled}" Value="True">
+                                            <Setter Property="Background" Value="#2E7D32" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding ViewModel.SteamInstalled}" Value="False">
+                                            <Setter Property="Background" Value="#C62828" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock FontSize="11" Foreground="White">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ViewModel.SteamInstalled}" Value="True">
+                                                <Setter Property="Text" Value="已安裝" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ViewModel.SteamInstalled}" Value="False">
+                                                <Setter Property="Text" Value="未偵測到" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Border>
+                    </StackPanel>
                     <TextBlock
+                        Margin="0,4,0,0"
+                        FontSize="12"
                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                        Text="{Binding ViewModel.SteamPath, Mode=OneWay}"
-                        TextWrapping="Wrap" />
+                        Text="{Binding ViewModel.SteamPath}" />
+                    <TextBlock
+                        Margin="0,2,0,0"
+                        FontSize="12"
+                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                        Text="{Binding ViewModel.StatsText}" />
                 </StackPanel>
-
                 <ui:Button
-                    Grid.Column="2"
+                    Grid.Column="1"
                     VerticalAlignment="Center"
-                    Command="{Binding ViewModel.RefreshSteamCommand}"
-                    Content="重新偵測"
+                    Command="{Binding ViewModel.RefreshCommand}"
+                    Content="重新整理"
                     Icon="{ui:SymbolIcon ArrowSync24}" />
             </Grid>
         </ui:Card>
 
-        <ui:ListView
+        <!--  Installed games grid  -->
+        <ScrollViewer
             Grid.Row="2"
-            Margin="0,16,0,0"
-            ItemsSource="{Binding ViewModel.LibraryFolders, Mode=OneWay}" />
+            Margin="16,8,16,16"
+            VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding ViewModel.InstalledGames}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Margin="8,4,8,4" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <ui:Card
+                            Margin="6"
+                            Width="200"
+                            Padding="0">
+                            <StackPanel>
+                                <Image
+                                    Height="93"
+                                    Stretch="UniformToFill"
+                                    Source="{Binding HeaderImageUrl, Converter={StaticResource UrlImageConverter}}" />
+                                <StackPanel Margin="10,8,10,10">
+                                    <TextBlock
+                                        MaxHeight="40"
+                                        FontWeight="SemiBold"
+                                        Text="{Binding Name}"
+                                        TextTrimming="CharacterEllipsis"
+                                        TextWrapping="Wrap"
+                                        ToolTip="{Binding Name}" />
+                                    <TextBlock
+                                        Margin="0,2,0,0"
+                                        FontSize="11"
+                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                        Text="{Binding AppId, StringFormat='AppID: {0}'}" />
+                                    <ui:Button
+                                        Margin="0,8,0,0"
+                                        HorizontalAlignment="Stretch"
+                                        Appearance="Caution"
+                                        Command="{Binding DataContext.ViewModel.RemoveGameCommand,
+                                            RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}"
+                                        Content="移除"
+                                        Icon="{ui:SymbolIcon Delete24}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </ui:Card>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
     </Grid>
 </Page>

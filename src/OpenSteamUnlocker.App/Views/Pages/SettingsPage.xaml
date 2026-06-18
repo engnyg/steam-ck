@@ -6,29 +6,196 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     Title="SettingsPage"
-    d:DesignHeight="600"
-    d:DesignWidth="900"
+    d:DesignHeight="900"
+    d:DesignWidth="1000"
     mc:Ignorable="d">
 
-    <StackPanel Margin="24">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!--  Header  -->
         <TextBlock
+            Grid.Row="0"
+            Margin="24,24,24,0"
             FontSize="28"
             FontWeight="SemiBold"
             Text="設定" />
 
-        <ui:CardExpander Margin="0,16,0,0" Header="應用程式">
+        <!--  Scrollable settings  -->
+        <ScrollViewer
+            Grid.Row="1"
+            Margin="24,16,24,0"
+            VerticalScrollBarVisibility="Auto">
             <StackPanel>
-                <ui:ToggleSwitch Content="除錯模式" IsChecked="{Binding ViewModel.DebugMode}" />
-                <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        Text="下載逾時 (秒)" />
-                    <ui:NumberBox
-                        Width="120"
-                        Margin="12,0,0,0"
-                        Value="{Binding ViewModel.DownloadTimeoutSeconds}" />
-                </StackPanel>
+
+                <!--  GitHub / API 設定  -->
+                <ui:CardExpander
+                    Margin="0,0,0,10"
+                    IsExpanded="True">
+                    <ui:CardExpander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Margin="0,0,10,0" Symbol="Key24" />
+                            <TextBlock VerticalAlignment="Center" Text="GitHub / API 憑證" />
+                        </StackPanel>
+                    </ui:CardExpander.Header>
+                    <StackPanel>
+                        <TextBlock
+                            Margin="0,0,0,4"
+                            FontSize="12"
+                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                            Text="GitHub Personal Token（提升 API 速率上限，60次/小時 → 5000次/小時）" />
+                        <ui:PasswordBox
+                            PlaceholderText="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                            Password="{Binding ViewModel.GithubPersonalToken, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock
+                            Margin="0,12,0,4"
+                            FontSize="12"
+                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                            Text="Manifest API Key（留空使用預設）" />
+                        <ui:PasswordBox
+                            PlaceholderText="選填"
+                            Password="{Binding ViewModel.ManifestApiKey, UpdateSourceTrigger=PropertyChanged}" />
+                    </StackPanel>
+                </ui:CardExpander>
+
+                <!--  Unlocker 行為  -->
+                <ui:CardExpander
+                    Margin="0,0,0,10"
+                    IsExpanded="True">
+                    <ui:CardExpander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Margin="0,0,10,0" Symbol="Settings24" />
+                            <TextBlock VerticalAlignment="Center" Text="解鎖引擎" />
+                        </StackPanel>
+                    </ui:CardExpander.Header>
+                    <StackPanel>
+                        <TextBlock
+                            Margin="0,0,0,4"
+                            FontSize="12"
+                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                            Text="引擎類型" />
+                        <ComboBox
+                            Width="220"
+                            HorizontalAlignment="Left"
+                            SelectedValue="{Binding ViewModel.ForceUnlockerType}"
+                            SelectedValuePath="Tag">
+                            <ComboBoxItem Content="自動偵測" Tag="auto" />
+                            <ComboBoxItem Content="SteamTools" Tag="steamtools" />
+                            <ComboBoxItem Content="GreenLuma" Tag="greenluma" />
+                            <ComboBoxItem Content="OpenSteamTool" Tag="opensteamtool" />
+                        </ComboBox>
+                        <ui:ToggleSwitch
+                            Margin="0,12,0,0"
+                            Content="SteamTools 固定版本（防止自動更新）"
+                            IsChecked="{Binding ViewModel.StFixedVersion}" />
+                        <ui:ToggleSwitch
+                            Margin="0,8,0,0"
+                            Content="預設修補 Manifest（安裝時自動加入 depotcache）"
+                            IsChecked="{Binding ViewModel.PatchManifestDefault}" />
+                    </StackPanel>
+                </ui:CardExpander>
+
+                <!--  網路設定  -->
+                <ui:CardExpander
+                    Margin="0,0,0,10"
+                    IsExpanded="False">
+                    <ui:CardExpander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Margin="0,0,10,0" Symbol="Globe24" />
+                            <TextBlock VerticalAlignment="Center" Text="網路設定" />
+                        </StackPanel>
+                    </ui:CardExpander.Header>
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                <TextBlock
+                                    Margin="0,0,0,4"
+                                    FontSize="12"
+                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                    Text="下載逾時（秒）" />
+                                <ui:NumberBox
+                                    Maximum="300"
+                                    Minimum="5"
+                                    Value="{Binding ViewModel.DownloadTimeoutSeconds}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                <TextBlock
+                                    Margin="0,0,0,4"
+                                    FontSize="12"
+                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                    Text="DLC 查詢逾時（秒）" />
+                                <ui:NumberBox
+                                    Maximum="300"
+                                    Minimum="5"
+                                    Value="{Binding ViewModel.DlcTimeout}" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ui:CardExpander>
+
+                <!--  應用程式  -->
+                <ui:CardExpander
+                    Margin="0,0,0,10"
+                    IsExpanded="False">
+                    <ui:CardExpander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Margin="0,0,10,0" Symbol="Apps24" />
+                            <TextBlock VerticalAlignment="Center" Text="應用程式" />
+                        </StackPanel>
+                    </ui:CardExpander.Header>
+                    <StackPanel>
+                        <ui:ToggleSwitch
+                            Content="除錯模式（輸出詳細日誌）"
+                            IsChecked="{Binding ViewModel.DebugMode}" />
+                        <ui:ToggleSwitch
+                            Margin="0,8,0,0"
+                            Content="記錄日誌至檔案"
+                            IsChecked="{Binding ViewModel.LoggingFiles}" />
+                        <TextBlock
+                            Margin="0,12,0,4"
+                            FontSize="12"
+                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                            Text="語言" />
+                        <ComboBox
+                            Width="200"
+                            HorizontalAlignment="Left"
+                            SelectedValue="{Binding ViewModel.Language}"
+                            SelectedValuePath="Tag">
+                            <ComboBoxItem Content="跟隨系統" Tag="system" />
+                            <ComboBoxItem Content="繁體中文" Tag="zh-TW" />
+                            <ComboBoxItem Content="简体中文" Tag="zh-CN" />
+                            <ComboBoxItem Content="English" Tag="en" />
+                        </ComboBox>
+                    </StackPanel>
+                </ui:CardExpander>
+
             </StackPanel>
-        </ui:CardExpander>
-    </StackPanel>
+        </ScrollViewer>
+
+        <!--  Footer: save button + feedback banner  -->
+        <StackPanel Grid.Row="2" Margin="24,8,24,24">
+            <ui:InfoBar
+                Margin="0,0,0,8"
+                IsClosable="True"
+                IsOpen="{Binding ViewModel.ShowSavedBanner}"
+                Message="{Binding ViewModel.SavedMessage}"
+                Severity="Success"
+                Title="儲存結果" />
+            <ui:Button
+                HorizontalAlignment="Right"
+                Appearance="Primary"
+                Command="{Binding ViewModel.SaveCommand}"
+                Content="儲存設定"
+                Icon="{ui:SymbolIcon Save24}"
+                IsEnabled="{Binding ViewModel.IsBusy, Converter={StaticResource InverseBool}}" />
+        </StackPanel>
+    </Grid>
 </Page>
