@@ -1,0 +1,3 @@
+[submodule "external/OpenSteamTool"]
+	path = external/OpenSteamTool
+	url = https://github.com/OpenSteam001/OpenSteamTool.git

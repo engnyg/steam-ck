@@ -485,3 +485,6 @@ $RECYCLE.BIN/
 
 # project reference dumps
 _reference/
+
+# Built engine binaries (produced by build-engine.ps1)
+src/OpenSteamUnlocker.App/engine/*.dll
