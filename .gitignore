@@ -425,6 +425,9 @@ test-results/
 # Mac bundle stuff
 *.dmg
 *.app
+# Exception: our WPF app project directory ends in .App on Windows
+!src/OpenSteamUnlocker.App/
+!src/OpenSteamUnlocker.App/**
 
 # content below from: https://github.com/github/gitignore/blob/main/Global/macOS.gitignore
 # General

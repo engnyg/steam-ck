@@ -1,0 +1,94 @@
+<ui:FluentWindow
+    x:Class="OpenSteamUnlocker.App.Views.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:pages="clr-namespace:OpenSteamUnlocker.App.Views.Pages"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="{Binding ViewModel.ApplicationTitle, Mode=OneWay}"
+    Width="1100"
+    Height="700"
+    d:DataContext="{d:DesignInstance Type=local:MainWindow}"
+    xmlns:local="clr-namespace:OpenSteamUnlocker.App.Views"
+    ExtendsContentIntoTitleBar="True"
+    WindowBackdropType="Mica"
+    WindowCornerPreference="Round"
+    WindowStartupLocation="CenterScreen"
+    mc:Ignorable="d">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar
+            Title="{Binding ViewModel.ApplicationTitle, Mode=OneWay}"
+            Grid.Row="0"
+            CloseWindowByDoubleClickOnIcon="True">
+            <ui:TitleBar.Icon>
+                <ui:SymbolIcon Symbol="Games24" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <ui:NavigationView
+            x:Name="RootNavigation"
+            Grid.Row="1"
+            IsBackButtonVisible="Visible"
+            IsPaneToggleVisible="True"
+            PaneDisplayMode="Left">
+            <ui:NavigationView.MenuItems>
+                <ui:NavigationViewItem
+                    Content="首頁"
+                    TargetPageType="{x:Type pages:HomePage}">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Home24" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem
+                    Content="搜尋入庫"
+                    TargetPageType="{x:Type pages:SearchPage}">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Search24" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem
+                    Content="解鎖引擎"
+                    TargetPageType="{x:Type pages:EnginePage}">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="PlugConnected24" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem
+                    Content="多人遊戲"
+                    TargetPageType="{x:Type pages:MultiplayerPage}">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="People24" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem
+                    Content="修改器"
+                    TargetPageType="{x:Type pages:TrainersPage}">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Wrench24" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+            </ui:NavigationView.MenuItems>
+            <ui:NavigationView.FooterMenuItems>
+                <ui:NavigationViewItem
+                    Content="設定"
+                    TargetPageType="{x:Type pages:SettingsPage}">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Settings24" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+            </ui:NavigationView.FooterMenuItems>
+        </ui:NavigationView>
+
+        <ContentPresenter
+            x:Name="RootContentDialog"
+            Grid.Row="0"
+            Grid.RowSpan="2" />
+    </Grid>
+</ui:FluentWindow>

@@ -1,0 +1,44 @@
+<Page
+    x:Class="OpenSteamUnlocker.App.Views.Pages.SearchPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="SearchPage"
+    d:DesignHeight="600"
+    d:DesignWidth="900"
+    mc:Ignorable="d">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock
+            Grid.Row="0"
+            FontSize="28"
+            FontWeight="SemiBold"
+            Text="搜尋入庫" />
+
+        <StackPanel Grid.Row="1" Margin="0,16,0,0" Orientation="Horizontal">
+            <ui:TextBox
+                Width="360"
+                PlaceholderText="輸入遊戲名稱或 AppID"
+                Text="{Binding ViewModel.Query, UpdateSourceTrigger=PropertyChanged}" />
+            <ui:Button
+                Margin="12,0,0,0"
+                Appearance="Primary"
+                Content="搜尋"
+                Icon="{ui:SymbolIcon Search24}" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Margin="0,16,0,0">
+            <ui:ToggleSwitch Content="加入全部 DLC" IsChecked="{Binding ViewModel.AddAllDlc}" />
+            <ui:ToggleSwitch Content="修補 Depot Key" IsChecked="{Binding ViewModel.PatchDepotKey}" />
+            <ui:ToggleSwitch Content="修補 Manifest" IsChecked="{Binding ViewModel.PatchManifest}" />
+        </StackPanel>
+    </Grid>
+</Page>

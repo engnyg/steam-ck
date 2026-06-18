@@ -1,0 +1,63 @@
+<Page
+    x:Class="OpenSteamUnlocker.App.Views.Pages.HomePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="HomePage"
+    d:DesignHeight="600"
+    d:DesignWidth="900"
+    mc:Ignorable="d">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock
+            Grid.Row="0"
+            FontSize="28"
+            FontWeight="SemiBold"
+            Text="遊戲庫" />
+
+        <ui:Card Grid.Row="1" Margin="0,16,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <ui:SymbolIcon
+                    Grid.Column="0"
+                    Margin="0,0,16,0"
+                    VerticalAlignment="Center"
+                    FontSize="32"
+                    Symbol="Games24" />
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock FontWeight="SemiBold" Text="Steam 安裝路徑" />
+                    <TextBlock
+                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                        Text="{Binding ViewModel.SteamPath, Mode=OneWay}"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+
+                <ui:Button
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    Command="{Binding ViewModel.RefreshSteamCommand}"
+                    Content="重新偵測"
+                    Icon="{ui:SymbolIcon ArrowSync24}" />
+            </Grid>
+        </ui:Card>
+
+        <ui:ListView
+            Grid.Row="2"
+            Margin="0,16,0,0"
+            ItemsSource="{Binding ViewModel.LibraryFolders, Mode=OneWay}" />
+    </Grid>
+</Page>
