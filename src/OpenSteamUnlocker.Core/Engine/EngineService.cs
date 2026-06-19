@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -73,30 +74,31 @@ public sealed class EngineService : IEngineService
         var steamPath = RequireSteamPath();
         Directory.CreateDirectory(_backupDir);
 
+        progress?.Report("正在初始化…");
+
+        foreach (var proc in Process.GetProcessesByName("steam"))
+        {
+            try { proc.Kill(); } catch { }
+        }
+        await Task.Delay(2000, ct).ConfigureAwait(false);
+
         if (BinariesAreBundled())
         {
-            progress?.Report("正在從本地複製引擎 DLL…");
             var dlls = EngineFiles.All.ToDictionary(
                 dll => dll,
                 dll => File.ReadAllBytes(Path.Combine(_bundledEngineDir, dll)));
-            progress?.Report("正在安裝引擎 DLL 到 Steam 目錄…");
             await InstallDllsAsync(dlls, steamPath, ct).ConfigureAwait(false);
         }
         else
         {
-            progress?.Report("正在從 GitHub 取得最新 Release…");
-            var zipBytes = await DownloadReleaseZipAsync(progress, ct).ConfigureAwait(false);
-
-            progress?.Report("正在解壓縮並安裝 DLL…");
+            var zipBytes = await DownloadReleaseZipAsync(null, ct).ConfigureAwait(false);
             var dlls = ExtractDllsFromZip(zipBytes);
             await InstallDllsAsync(dlls, steamPath, ct).ConfigureAwait(false);
-
-            progress?.Report("正在安裝 Pattern 檔（Steam 客戶端版本簽名）…");
             await InstallPatternFilesFromZipAsync(zipBytes, steamPath, ct).ConfigureAwait(false);
         }
 
         await EnsureTomlAsync(ct).ConfigureAwait(false);
-        progress?.Report("安裝完成！請重新啟動 Steam 使引擎生效。");
+        progress?.Report("初始化完成！請重新啟動 Steam。");
     }
 
     private async Task InstallDllsAsync(Dictionary<string, byte[]> dlls, string steamPath, CancellationToken ct)
@@ -137,7 +139,7 @@ public sealed class EngineService : IEngineService
         if (zipUrl is null)
             throw new InvalidOperationException("找不到 OpenSteamTool Release 下載連結。");
 
-        progress?.Report($"正在下載 {Path.GetFileName(zipUrl)}…");
+        progress?.Report("正在下載…");
         return await _http.GetByteArrayAsync(zipUrl, ct).ConfigureAwait(false);
     }
 
@@ -198,9 +200,15 @@ public sealed class EngineService : IEngineService
         progress?.Report("Pattern 檔更新完成！請重新啟動 Steam。");
     }
 
-    public Task UninstallAsync(CancellationToken ct = default)
+    public async Task UninstallAsync(CancellationToken ct = default)
     {
         var steamPath = RequireSteamPath();
+
+        foreach (var proc in Process.GetProcessesByName("steam"))
+        {
+            try { proc.Kill(); } catch { }
+        }
+        await Task.Delay(2000, ct).ConfigureAwait(false);
 
         foreach (var dll in EngineFiles.All)
         {
@@ -209,15 +217,12 @@ public sealed class EngineService : IEngineService
 
             TryDelete(target);
 
-            // Restore a previously backed-up original, if any.
             if (File.Exists(backup))
             {
-                File.Copy(backup, target, overwrite: true);
+                try { File.Copy(backup, target, overwrite: true); } catch { }
                 TryDelete(backup);
             }
         }
-
-        return Task.CompletedTask;
     }
 
     public async Task WriteLuaAsync(string appId, string luaContent, CancellationToken ct = default)

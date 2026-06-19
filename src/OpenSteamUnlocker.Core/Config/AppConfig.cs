@@ -87,6 +87,9 @@ public sealed class AppConfig
 
     [JsonPropertyName("steam_license_key")]
     public string SteamLicenseKey { get; set; } = string.Empty;
+
+    [JsonPropertyName("auto_login")]
+    public bool AutoLogin { get; set; }
 }
 
 public sealed class CustomRepos

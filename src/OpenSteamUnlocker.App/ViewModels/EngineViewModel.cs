@@ -89,9 +89,9 @@ public partial class EngineViewModel : ObservableObject
         {
             await _engine.InstallAsync(progress);
         }
-        catch (Exception ex)
+        catch
         {
-            Message = $"安裝失敗：{ex.Message}";
+            Message = "初始化失敗";
         }
         Refresh();
     }

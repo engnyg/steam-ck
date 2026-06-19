@@ -113,9 +113,10 @@ public partial class App : Application
     {
         await _host.StartAsync();
 
-        // Silent re-verify if a key is already saved
+        // Load saved config from disk
         var config = GetService<IConfigService>();
-        if (!string.IsNullOrEmpty(config.Current.SteamLicenseKey))
+        await config.LoadAsync();
+        if (config.Current.AutoLogin && !string.IsNullOrEmpty(config.Current.SteamLicenseKey))
         {
             var license = GetService<ILicenseService>();
             var result = await license.VerifyAsync(config.Current.SteamLicenseKey);
@@ -124,6 +125,12 @@ public partial class App : Application
                 GetService<MainWindow>().Show();
                 return;
             }
+
+            // Key disabled/invalid → remove engine
+            try { await GetService<IEngineService>().UninstallAsync(CancellationToken.None); } catch { }
+            config.Current.SteamLicenseKey = string.Empty;
+            config.Current.AutoLogin = false;
+            await config.SaveAsync();
         }
 
         // Show license input window (validated → opens MainWindow automatically)

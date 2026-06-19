@@ -7,7 +7,7 @@
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     Title="授權驗證"
     Width="480"
-    Height="320"
+    Height="400"
     ExtendsContentIntoTitleBar="True"
     ResizeMode="NoResize"
     WindowBackdropType="Mica"
@@ -83,6 +83,12 @@
                     </Style>
                 </TextBlock.Style>
             </TextBlock>
+
+            <!--  Auto login checkbox  -->
+            <CheckBox
+                Margin="0,10,0,0"
+                IsChecked="{Binding ViewModel.AutoLogin}"
+                Content="自動登入（下次啟動時自動驗證）" />
 
             <!--  Verify button  -->
             <ui:Button
