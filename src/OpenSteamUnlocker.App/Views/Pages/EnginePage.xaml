@@ -15,7 +15,7 @@
             <TextBlock
                 FontSize="28"
                 FontWeight="SemiBold"
-                Text="解鎖引擎 (OpenSteamTool)" />
+                Text="解鎖引擎" />
 
             <!--  Status card  -->
             <ui:Card Margin="0,16,0,0">
@@ -46,13 +46,6 @@
                             Icon="{ui:SymbolIcon ArrowSync24}" />
                     </Grid>
 
-                    <ui:InfoBar
-                        Margin="0,12,0,0"
-                        IsClosable="False"
-                        IsOpen="{Binding ViewModel.ShowBinariesWarning, Mode=OneWay}"
-                        Message="尚未附帶引擎二進位檔（OpenSteamTool.dll / dwmapi.dll / xinput1_4.dll）。請先建置 OpenSteamTool 並放入 app 的 engine 資料夾。"
-                        Severity="Warning" />
-
                     <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
                         <ui:Button
                             Appearance="Primary"
@@ -65,43 +58,15 @@
                             Content="移除引擎"
                             Icon="{ui:SymbolIcon Delete24}" />
                     </StackPanel>
+
+                    <TextBlock
+                        Margin="0,10,0,0"
+                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                        Text="{Binding ViewModel.Message, Mode=OneWay}"
+                        TextWrapping="Wrap" />
                 </StackPanel>
             </ui:Card>
 
-            <!--  Manual lua write (demonstrates the write → unlock loop)  -->
-            <ui:Card Margin="0,16,0,0">
-                <StackPanel>
-                    <TextBlock FontWeight="SemiBold" Text="手動寫入解鎖腳本" />
-                    <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
-                        <ui:TextBox
-                            Width="200"
-                            PlaceholderText="AppID（例如 480）"
-                            Text="{Binding ViewModel.NewAppId, UpdateSourceTrigger=PropertyChanged}" />
-                        <ui:Button
-                            Margin="12,0,0,0"
-                            Command="{Binding ViewModel.AddTestLuaCommand}"
-                            Content="寫入 lua"
-                            Icon="{ui:SymbolIcon Add24}" />
-                    </StackPanel>
-                </StackPanel>
-            </ui:Card>
-
-            <!--  Installed apps  -->
-            <ui:Card Margin="0,16,0,0">
-                <StackPanel>
-                    <TextBlock FontWeight="SemiBold" Text="已安裝的解鎖腳本" />
-                    <ui:ListView
-                        Margin="0,8,0,0"
-                        MaxHeight="240"
-                        ItemsSource="{Binding ViewModel.InstalledApps, Mode=OneWay}" />
-                </StackPanel>
-            </ui:Card>
-
-            <TextBlock
-                Margin="0,16,0,0"
-                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                Text="{Binding ViewModel.Message, Mode=OneWay}"
-                TextWrapping="Wrap" />
         </StackPanel>
     </ScrollViewer>
 </Page>

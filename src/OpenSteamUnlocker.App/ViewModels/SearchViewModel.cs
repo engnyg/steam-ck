@@ -7,6 +7,8 @@ using OpenSteamUnlocker.Core.Manifest.Services;
 
 namespace OpenSteamUnlocker.App.ViewModels;
 
+public record SourceItem(ManifestSourceMode Mode, string Label);
+
 public partial class SearchViewModel : ObservableObject
 {
     private readonly IGameSearchService  _search;
@@ -21,6 +23,7 @@ public partial class SearchViewModel : ObservableObject
         _search    = search;
         _installer = installer;
         _config    = config;
+        _selectedSourceItem = SourceItems[0];
     }
 
     // ── Inputs ────────────────────────────────────────────────────────────────
@@ -31,6 +34,16 @@ public partial class SearchViewModel : ObservableObject
 
     [ObservableProperty] private bool _autoUpdate  = false;
     [ObservableProperty] private bool _addAllDlc   = true;
+
+    public IReadOnlyList<SourceItem> SourceItems { get; } =
+    [
+        new(ManifestSourceMode.Auto,            "自動選取"),
+        new(ManifestSourceMode.SudamaGitHub,    "Sudama + GitHub"),
+        new(ManifestSourceMode.Cysaw,           "Cysaw"),
+        new(ManifestSourceMode.SteamAutoCracks, "SteamAutoCracks"),
+    ];
+
+    [ObservableProperty] private SourceItem _selectedSourceItem;
 
     // ── State ─────────────────────────────────────────────────────────────────
 
@@ -101,16 +114,18 @@ public partial class SearchViewModel : ObservableObject
         ShowResultSuccess = false;
         ShowResultError   = false;
         ResultText        = string.Empty;
+        StatusText        = string.Empty;
         var progress      = new Progress<string>(msg => StatusText = msg);
 
         try
         {
             var cfg     = _config.Current;
             var options = new ManifestInstallOptions(
-                AutoUpdate:         AutoUpdate,
-                AddFreeDlc:         AddAllDlc,
+                SourceMode:          SelectedSourceItem.Mode,
+                AutoUpdate:          AutoUpdate,
+                AddFreeDlc:          AddAllDlc,
                 GithubPersonalToken: cfg.GithubPersonalToken,
-                ExtraGitHubRepos:   cfg.CustomRepos.Github
+                ExtraGitHubRepos:    cfg.CustomRepos.Github
                     .Where(r => !string.IsNullOrWhiteSpace(r.Repo))
                     .Select(r => r.Repo)
                     .ToList());
@@ -152,7 +167,7 @@ public partial class SearchViewModel : ObservableObject
 
     private static string BuildSuccessMessage(string name, ManifestInstallResult r)
     {
-        var parts = new List<string> { $"《{name}》 已透過 {r.ProviderUsed} 入庫。" };
+        var parts = new List<string> { $"《{name}》 入庫成功。" };
         if (r.ManifestsCopied > 0) parts.Add($"複製了 {r.ManifestsCopied} 個 manifest 檔案。");
         if (r.DlcsAdded > 0)       parts.Add($"加入了 {r.DlcsAdded} 個 DLC。");
         return string.Join(" ", parts);

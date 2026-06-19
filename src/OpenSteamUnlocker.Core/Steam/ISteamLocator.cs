@@ -17,6 +17,12 @@ public interface ISteamLocator
     /// </summary>
     string? LuaConfigPath { get; }
 
+    /// <summary>
+    /// The directory SteamTools reads plugin scripts from
+    /// (<c>&lt;Steam&gt;/config/stplug-in</c>).
+    /// </summary>
+    string? SteamToolsPluginPath { get; }
+
     /// <summary>Re-reads the registry / disk to refresh <see cref="SteamPath"/>.</summary>
     void Refresh();
 

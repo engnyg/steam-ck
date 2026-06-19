@@ -113,7 +113,7 @@
                                 <Image
                                     Height="93"
                                     Stretch="UniformToFill"
-                                    Source="{Binding HeaderImageUrl, Converter={StaticResource UrlImageConverter}}" />
+                                    Source="{Binding HeaderImage}" />
                                 <StackPanel Margin="10,8,10,10">
                                     <TextBlock
                                         MaxHeight="40"
@@ -122,11 +122,6 @@
                                         TextTrimming="CharacterEllipsis"
                                         TextWrapping="Wrap"
                                         ToolTip="{Binding Name}" />
-                                    <TextBlock
-                                        Margin="0,2,0,0"
-                                        FontSize="11"
-                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                        Text="{Binding AppId, StringFormat='AppID: {0}'}" />
                                     <ui:Button
                                         Margin="0,8,0,0"
                                         HorizontalAlignment="Stretch"

@@ -66,9 +66,21 @@ public static class HttpRetryExtensions
 
                 return null;
             }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // Per-request timeout fired (not a user cancellation) — treat as transient failure.
+                if (attempt < maxRetries - 1)
+                    await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds * (attempt + 1)), ct).ConfigureAwait(false);
+                // Fall through to next attempt, or return null after the last one.
+            }
             catch (Exception) when (attempt < maxRetries - 1)
             {
                 await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds * (attempt + 1)), ct).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Last attempt failed — return null instead of propagating.
+                return null;
             }
         }
 

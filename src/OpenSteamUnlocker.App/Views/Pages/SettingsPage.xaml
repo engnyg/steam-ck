@@ -32,42 +32,7 @@
             VerticalScrollBarVisibility="Auto">
             <StackPanel>
 
-                <!--  Unlocker 行為  -->
-                <ui:CardExpander
-                    Margin="0,0,0,10"
-                    IsExpanded="True">
-                    <ui:CardExpander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <ui:SymbolIcon Margin="0,0,10,0" Symbol="Settings24" />
-                            <TextBlock VerticalAlignment="Center" Text="解鎖引擎" />
-                        </StackPanel>
-                    </ui:CardExpander.Header>
-                    <StackPanel>
-                        <TextBlock
-                            Margin="0,0,0,4"
-                            FontSize="12"
-                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                            Text="引擎類型" />
-                        <ComboBox
-                            Width="220"
-                            HorizontalAlignment="Left"
-                            SelectedValue="{Binding ViewModel.ForceUnlockerType}"
-                            SelectedValuePath="Tag">
-                            <ComboBoxItem Content="自動偵測" Tag="auto" />
-                            <ComboBoxItem Content="SteamTools" Tag="steamtools" />
-                            <ComboBoxItem Content="GreenLuma" Tag="greenluma" />
-                            <ComboBoxItem Content="OpenSteamTool" Tag="opensteamtool" />
-                        </ComboBox>
-                        <ui:ToggleSwitch
-                            Margin="0,12,0,0"
-                            Content="SteamTools 固定版本（防止自動更新）"
-                            IsChecked="{Binding ViewModel.StFixedVersion}" />
-                        <ui:ToggleSwitch
-                            Margin="0,8,0,0"
-                            Content="預設修補 Manifest（安裝時自動加入 depotcache）"
-                            IsChecked="{Binding ViewModel.PatchManifestDefault}" />
-                    </StackPanel>
-                </ui:CardExpander>
+
 
                 <!--  網路設定  -->
                 <ui:CardExpander

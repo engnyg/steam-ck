@@ -37,4 +37,14 @@ public sealed record EngineStatus
 
     /// <summary>AppIDs of Lua unlock scripts currently installed.</summary>
     public required IReadOnlyList<string> InstalledApps { get; init; }
+
+    /// <summary>
+    /// True when a pattern file matching the installed <c>steamclient.dll</c> exists.
+    /// False means OpenSteamTool cannot hook into the current Steam version;
+    /// re-installing the engine will download updated pattern files.
+    /// </summary>
+    public bool PatternUpToDate { get; init; }
+
+    /// <summary>Lowercase hex SHA-256 of <c>steamclient.dll</c>, or null if not found.</summary>
+    public string? SteamClientHash { get; init; }
 }

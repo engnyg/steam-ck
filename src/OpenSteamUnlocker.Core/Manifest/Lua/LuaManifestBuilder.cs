@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using OpenSteamUnlocker.Core.Manifest.Models;
 
 namespace OpenSteamUnlocker.Core.Manifest.Lua;
@@ -30,18 +31,29 @@ public static class LuaManifestBuilder
     public static string Build(string appId, IEnumerable<DepotInfo> depots, bool autoUpdate)
     {
         var sb = new StringBuilder();
-        sb.Append("addappid(").Append(appId).Append(")\n");
 
         var depotList = depots.ToList();
 
-        foreach (var depot in depotList)
+        // AppID line: patch in its own key if available (mirrors Fluent-Install's patch_depot_key).
+        // Some games use their AppID as a depot ID with encrypted content.
+        var appEntry = depotList.Find(d => d.DepotId == appId);
+        if (appEntry is not null && !string.IsNullOrEmpty(appEntry.DecryptionKey))
+            sb.Append("addappid(").Append(appId).Append(", 1, \"").Append(appEntry.DecryptionKey).Append("\")\n");
+        else
+            sb.Append("addappid(").Append(appId).Append(")\n");
+
+        // Write all other depots with keys (the AppID entry is already handled above).
+        foreach (var depot in depotList.Where(d => d.DepotId != appId))
         {
             if (!string.IsNullOrEmpty(depot.DecryptionKey))
                 sb.Append("addappid(").Append(depot.DepotId).Append(", 1, \"").Append(depot.DecryptionKey).Append("\")\n");
         }
 
+        // Only pin manifests for depots that also have a decryption key.
+        // Writing setManifestid for a keyless depot makes Steam try to decrypt an
+        // unkeyed manifest, which causes the "content not decrypted" error.
         var manifestLines = depotList
-            .Where(d => !string.IsNullOrEmpty(d.ManifestId))
+            .Where(d => !string.IsNullOrEmpty(d.ManifestId) && !string.IsNullOrEmpty(d.DecryptionKey))
             .Select(d => autoUpdate
                 ? $"--setManifestid({d.DepotId}, \"{d.ManifestId}\")"
                 : $"setManifestid({d.DepotId}, \"{d.ManifestId}\")")
@@ -49,8 +61,9 @@ public static class LuaManifestBuilder
 
         if (manifestLines.Count > 0)
         {
-            sb.Append("\n-- Manifests\n");
+            sb.Append('\n');
             sb.Append(string.Join("\n", manifestLines)).Append('\n');
+            sb.Append("-- Manifests\n");
         }
 
         return sb.ToString();
@@ -62,15 +75,24 @@ public static class LuaManifestBuilder
     /// </summary>
     public static string AppendFreeDlc(string existingLua, IEnumerable<string> dlcAppIds)
     {
+        // Collect all appids already present (with or without key) to avoid duplicates.
+        // Matches both addappid(123) and addappid(123, 1, "key").
+        var existingIds = new HashSet<string>(
+            Regex.Matches(existingLua, @"addappid\((\d+)")
+                 .Select(m => m.Groups[1].Value),
+            StringComparer.Ordinal);
+
         var sb = new StringBuilder(existingLua);
         if (existingLua.Length > 0 && !existingLua.EndsWith('\n'))
             sb.Append('\n');
 
         foreach (var dlc in dlcAppIds)
         {
-            var line = $"addappid({dlc})";
-            if (!existingLua.Contains(line))
-                sb.Append(line).Append('\n');
+            if (!existingIds.Contains(dlc))
+            {
+                sb.Append($"addappid({dlc})").Append('\n');
+                existingIds.Add(dlc);
+            }
         }
 
         return sb.ToString();

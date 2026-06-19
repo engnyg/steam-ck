@@ -24,6 +24,9 @@ public partial class EngineViewModel : ObservableObject
     private bool _showBinariesWarning;
 
     [ObservableProperty]
+    private bool _showPatternWarning;
+
+    [ObservableProperty]
     private string _statusText = "未知";
 
     [ObservableProperty]
@@ -51,6 +54,7 @@ public partial class EngineViewModel : ObservableObject
         Installed = status.Installed;
         BinariesBundled = status.BinariesBundled;
         ShowBinariesWarning = !status.BinariesBundled;
+        ShowPatternWarning = status.Installed && !status.PatternUpToDate;
         LuaDirectory = status.LuaDirectory ?? "—";
 
         StatusText = !status.SteamFound
@@ -64,19 +68,46 @@ public partial class EngineViewModel : ObservableObject
         InstalledApps.Clear();
         foreach (var app in status.InstalledApps)
             InstalledApps.Add(app);
+
+        // Auto-generate opensteamtool.toml when engine DLLs are detected.
+        if (status.Installed)
+            _ = TryEnsureTomlAsync();
+    }
+
+    private async Task TryEnsureTomlAsync()
+    {
+        try { await _engine.EnsureTomlAsync(); }
+        catch { /* non-fatal — TOML is optional */ }
     }
 
     [RelayCommand]
     private async Task InstallAsync()
     {
+        Message = string.Empty;
+        var progress = new Progress<string>(msg => Message = msg);
         try
         {
-            await _engine.InstallAsync();
-            Message = "引擎已部署到 Steam 根目錄。";
+            await _engine.InstallAsync(progress);
         }
         catch (Exception ex)
         {
             Message = $"安裝失敗：{ex.Message}";
+        }
+        Refresh();
+    }
+
+    [RelayCommand]
+    private async Task UpdatePatternsAsync()
+    {
+        Message = string.Empty;
+        var progress = new Progress<string>(msg => Message = msg);
+        try
+        {
+            await _engine.UpdatePatternsAsync(progress);
+        }
+        catch (Exception ex)
+        {
+            Message = $"更新 Pattern 失敗：{ex.Message}";
         }
         Refresh();
     }

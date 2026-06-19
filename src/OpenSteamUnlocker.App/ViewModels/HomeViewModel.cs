@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using OpenSteamUnlocker.Core.Engine;
@@ -10,16 +11,16 @@ namespace OpenSteamUnlocker.App.ViewModels;
 /// <summary>An installed game entry displayed on the Home page.</summary>
 public partial class InstalledGame : ObservableObject
 {
-    [ObservableProperty] private string  _name;
-    [ObservableProperty] private string? _headerImageUrl;
+    [ObservableProperty] private string        _name;
+    [ObservableProperty] private BitmapImage?  _headerImage;
 
-    public string AppId { get; }
+    public string AppId      { get; }
+    public string FallbackUrl => $"https://cdn.cloudflare.steamstatic.com/steam/apps/{AppId}/header.jpg";
 
     public InstalledGame(string appId)
     {
-        AppId            = appId;
-        _name            = appId; // updated asynchronously
-        _headerImageUrl  = $"https://cdn.cloudflare.steamstatic.com/steam/apps/{appId}/header.jpg";
+        AppId  = appId;
+        _name  = "載入中…";
     }
 }
 
@@ -97,8 +98,28 @@ public partial class HomeViewModel : ObservableObject
                 var info = await _steamData.GetGameInfoAsync(game.AppId);
                 if (!string.IsNullOrEmpty(info.Name))
                     game.Name = info.Name;
+
+                var imgUrl = !string.IsNullOrEmpty(info.HeaderImageUrl)
+                    ? info.HeaderImageUrl
+                    : game.FallbackUrl;
+
+                var bytes = await _steamData.DownloadImageAsync(imgUrl);
+                if (bytes is { Length: > 0 })
+                {
+                    var bmp = await Task.Run(() =>
+                    {
+                        var b = new BitmapImage();
+                        b.BeginInit();
+                        b.StreamSource = new System.IO.MemoryStream(bytes);
+                        b.CacheOption  = BitmapCacheOption.OnLoad;
+                        b.EndInit();
+                        b.Freeze();
+                        return b;
+                    });
+                    game.HeaderImage = bmp;
+                }
             }
-            catch { /* skip — CDN image + AppID fallback is fine */ }
+            catch { /* skip — AppID text fallback is fine */ }
         }
     }
 

@@ -28,11 +28,42 @@ public sealed class SteamDataService : ISteamDataService
     public async Task<IReadOnlyList<SteamDepotData>> GetDepotsAsync(
         string appId, CancellationToken ct = default)
     {
-        var result = await TryDepotsAsync($"https://api.9178666.xyz/cmd/{appId}", appId, CaiHeaders, ct);
+        // api.steamcmd.net — returns full depot info including manifest IDs
+        var result = await TryDepotsAsync($"https://api.steamcmd.net/v1/info/{appId}", appId, null, ct);
         if (result.Count > 0) return result;
 
-        result = await TryDepotsAsync($"https://api.steamcmd.net/v1/info/{appId}", appId, null, ct);
+        // CaiGames fallback
+        result = await TryDepotsAsync($"https://api.9178666.xyz/cmd/{appId}", appId, CaiHeaders, ct);
+        if (result.Count > 0) return result;
+
+        // manifest.steam.run last resort — compact format, may be unreachable
+        result = await TryDepotsFromManifestRunAsync($"https://manifest.steam.run/api/depot/{appId}", ct);
         return result;
+    }
+
+    private async Task<IReadOnlyList<SteamDepotData>> TryDepotsFromManifestRunAsync(
+        string url, CancellationToken ct)
+    {
+        using var resp = await _http.GetWithRetryAsync(url, timeoutSeconds: 10, maxRetries: 1, ct: ct);
+        if (resp is null) return Array.Empty<SteamDepotData>();
+        try
+        {
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("depots", out var depotsEl))
+                return Array.Empty<SteamDepotData>();
+
+            var results = new List<SteamDepotData>();
+            foreach (var item in depotsEl.EnumerateArray())
+            {
+                var depotId    = item.TryGetProperty("depotid",   out var dEl) ? GetString(dEl) : null;
+                var manifestId = item.TryGetProperty("manifestid", out var mEl) ? GetString(mEl) : null;
+                if (string.IsNullOrEmpty(depotId) || string.IsNullOrEmpty(manifestId)) continue;
+                results.Add(new SteamDepotData(depotId, manifestId, 0, null));
+            }
+            return results;
+        }
+        catch { return Array.Empty<SteamDepotData>(); }
     }
 
     private async Task<IReadOnlyList<SteamDepotData>> TryDepotsAsync(
@@ -63,17 +94,27 @@ public sealed class SteamDataService : ISteamDataService
         foreach (var prop in depotsEl.EnumerateObject())
         {
             if (prop.Value.ValueKind != JsonValueKind.Object) continue;
-            if (!prop.Value.TryGetProperty("manifests", out var manifests)) continue;
-            if (!manifests.TryGetProperty("public", out var pub)) continue;
-            if (pub.ValueKind != JsonValueKind.Object) continue;
-            if (!pub.TryGetProperty("gid", out var gidEl)) continue;
+            // Only process numeric depot IDs; skip metadata keys like "branches"
+            if (!prop.Name.All(char.IsDigit)) continue;
 
-            var manifestId = GetString(gidEl);
-            if (string.IsNullOrEmpty(manifestId)) continue;
-
+            // Extract manifest ID from public branch if present (may be absent for DLC depots)
+            string? manifestId = null;
             long size = 0;
-            if (pub.TryGetProperty("download", out var dlEl))
-                size = dlEl.TryGetInt64(out var s) ? s : 0;
+            if (prop.Value.TryGetProperty("manifests", out var manifests) &&
+                manifests.TryGetProperty("public", out var pub) &&
+                pub.ValueKind == JsonValueKind.Object)
+            {
+                if (pub.TryGetProperty("gid", out var gidEl))
+                    manifestId = GetString(gidEl);
+                if (pub.TryGetProperty("download", out var dlEl))
+                {
+                    if (dlEl.ValueKind == JsonValueKind.Number)
+                        dlEl.TryGetInt64(out size);
+                    else if (dlEl.ValueKind == JsonValueKind.String &&
+                             long.TryParse(dlEl.GetString(), out var parsed))
+                        size = parsed;
+                }
+            }
 
             string? dlcAppId = null;
             if (prop.Value.TryGetProperty("dlcappid", out var dlcEl) &&
@@ -174,34 +215,76 @@ public sealed class SteamDataService : ISteamDataService
 
     public async Task<GameInfo> GetGameInfoAsync(string appId, CancellationToken ct = default)
     {
-        var fallback = new GameInfo(appId, string.Empty,
-            $"https://cdn.cloudflare.steamstatic.com/steam/apps/{appId}/header.jpg");
+        var imageUrl = $"https://cdn.cloudflare.steamstatic.com/steam/apps/{appId}/header.jpg";
 
+        // Try SteamCMD first — reliable name + image URL.
+        var info = await TryGameInfoFromSteamCmdAsync(appId, imageUrl, ct);
+        if (info is not null) return info;
+
+        // Fall back to CaiGames.
+        info = await TryGameInfoFromCaiAsync(appId, imageUrl, ct);
+        if (info is not null) return info;
+
+        return new GameInfo(appId, appId, imageUrl);
+    }
+
+    private async Task<GameInfo?> TryGameInfoFromSteamCmdAsync(
+        string appId, string fallbackImageUrl, CancellationToken ct)
+    {
         using var resp = await _http.GetWithRetryAsync(
-            $"https://api.9178666.xyz/cmd/{appId}", timeoutSeconds: 20, maxRetries: 2,
-            headers: CaiHeaders, ct: ct);
-        if (resp is null) return fallback;
-
+            $"https://api.steamcmd.net/v1/info/{appId}", timeoutSeconds: 15, maxRetries: 1, ct: ct);
+        if (resp is null) return null;
         try
         {
             var body = await resp.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(body);
-            if (!doc.RootElement.TryGetProperty("data", out var dataEl)) return fallback;
+            if (!doc.RootElement.TryGetProperty("data", out var dataEl)) return null;
+            if (!dataEl.TryGetProperty(appId, out var appEl)) return null;
 
-            // CaiGames may nest under appId or serve flat
+            string name = string.Empty;
+            if (appEl.TryGetProperty("common", out var common) &&
+                common.TryGetProperty("name", out var n))
+                name = n.GetString() ?? string.Empty;
+
+            if (string.IsNullOrEmpty(name)) return null;
+            return new GameInfo(appId, name, fallbackImageUrl);
+        }
+        catch { return null; }
+    }
+
+    private async Task<GameInfo?> TryGameInfoFromCaiAsync(
+        string appId, string fallbackImageUrl, CancellationToken ct)
+    {
+        using var resp = await _http.GetWithRetryAsync(
+            $"https://api.9178666.xyz/cmd/{appId}", timeoutSeconds: 15, maxRetries: 1,
+            headers: CaiHeaders, ct: ct);
+        if (resp is null) return null;
+        try
+        {
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("data", out var dataEl)) return null;
             JsonElement appEl;
-            if (!dataEl.TryGetProperty(appId, out appEl))
-                appEl = dataEl;
+            if (!dataEl.TryGetProperty(appId, out appEl)) appEl = dataEl;
 
             var name  = appEl.TryGetProperty("name", out var n) ? n.GetString() ?? string.Empty : string.Empty;
-            var image = appEl.TryGetProperty("header_image", out var img)
-                ? img.GetString()
-                : fallback.HeaderImageUrl;
-            var desc  = appEl.TryGetProperty("short_description", out var d) ? d.GetString() : null;
+            if (string.IsNullOrEmpty(name)) return null;
 
-            return new GameInfo(appId, name, image ?? fallback.HeaderImageUrl, desc);
+            var image = appEl.TryGetProperty("header_image", out var img)
+                ? img.GetString() ?? fallbackImageUrl : fallbackImageUrl;
+            return new GameInfo(appId, name, image);
         }
-        catch { return fallback; }
+        catch { return null; }
+    }
+
+    // ── Image download ────────────────────────────────────────────────────────
+
+    public async Task<byte[]?> DownloadImageAsync(string url, CancellationToken ct = default)
+    {
+        using var resp = await _http.GetWithRetryAsync(url, timeoutSeconds: 15, maxRetries: 1, ct: ct);
+        if (resp is null) return null;
+        try { return await resp.Content.ReadAsByteArrayAsync(ct); }
+        catch { return null; }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

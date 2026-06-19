@@ -35,6 +35,42 @@ public sealed class GitHubMirrorClient : IGitHubMirrorClient
         return new[] { $"https://raw.githubusercontent.com/{repo}/{sha}/{path}" };
     }
 
+    public async Task<byte[]?> GetBranchZipAsync(string repo, string branchName, CancellationToken ct = default)
+    {
+        var codeloadUrl = $"https://codeload.github.com/{repo}/zip/refs/heads/{branchName}";
+
+        IEnumerable<string> candidates;
+        if (_region.IsChina)
+        {
+            candidates =
+            [
+                $"https://gh-proxy.org/https://codeload.github.com/{repo}/zip/refs/heads/{branchName}",
+                $"https://cdn.gh-proxy.org/https://codeload.github.com/{repo}/zip/refs/heads/{branchName}",
+                $"https://edgeone.gh-proxy.org/https://codeload.github.com/{repo}/zip/refs/heads/{branchName}",
+                codeloadUrl,
+            ];
+        }
+        else
+        {
+            candidates = [codeloadUrl];
+        }
+
+        foreach (var url in candidates)
+        {
+            try
+            {
+                using var response = await _http.GetAsync(url, ct).ConfigureAwait(false);
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    return null; // branch doesn't exist in this repo
+                if (response.IsSuccessStatusCode)
+                    return await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            }
+            catch (HttpRequestException) { }
+            catch (TaskCanceledException) when (!ct.IsCancellationRequested) { }
+        }
+        return null;
+    }
+
     public async Task<byte[]> GetFromMirrorsAsync(string repo, string sha, string path, CancellationToken ct = default)
     {
         var originalUrls = BuildMirrorUrls(repo, sha, path);

@@ -21,6 +21,9 @@ public sealed class SteamLocator : ISteamLocator
     public string? LuaConfigPath =>
         _steamPath is null ? null : Path.Combine(_steamPath, "config", "lua");
 
+    public string? SteamToolsPluginPath =>
+        _steamPath is null ? null : Path.Combine(_steamPath, "config", "stplug-in");
+
     public void Refresh() => _steamPath = ResolveSteamPath();
 
     private static string? ResolveSteamPath()
@@ -85,7 +88,9 @@ public sealed class SteamLocator : ISteamLocator
 
             foreach (var entry in document.Root.Children)
             {
-                var path = entry.Value["path"]?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                if (!entry.Value.IsCollection) continue;
+                if (!entry.Value.TryGetValue("path", out var pathObj)) continue;
+                var path = pathObj.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path) && !result.Contains(path))
                     result.Add(path);
             }

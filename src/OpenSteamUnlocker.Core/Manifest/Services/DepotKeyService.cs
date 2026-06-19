@@ -1,16 +1,24 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using OpenSteamUnlocker.Core.Http;
 
 namespace OpenSteamUnlocker.Core.Manifest.Services;
 
 /// <summary>
-/// Downloads the Sudama full-key database (<c>api.993499094.xyz/depotkeys.json</c>)
+/// Downloads the full depot-key database from multiple sources (Sudama + ManifestHub)
 /// and caches it locally for 24 hours. The JSON is a flat <c>{"depotId": "key"}</c>
 /// dictionary containing tens of thousands of entries.
 /// </summary>
 public sealed class DepotKeyService : IDepotKeyService
 {
-    private const string KeysUrl      = "https://api.993499094.xyz/depotkeys.json";
+    // Sources tried in order; first successful response wins for each depot.
+    private static readonly string[] KeySources =
+    [
+        "https://api.993499094.xyz/depotkeys.json",
+        "https://raw.githubusercontent.com/SteamAutoCracks/ManifestHub/main/depotkeys.json",
+        "https://raw.githubusercontent.com/SSMGAlt/ManifestHub2/main/depotkeys.json",
+    ];
+
     private const double CacheTtlSecs = 86400; // 24 h
 
     private readonly HttpClient _http;
@@ -41,44 +49,56 @@ public sealed class DepotKeyService : IDepotKeyService
             return _cache;
         }
 
-        // Download with exponential back-off (mirrors Python's 3-retry logic).
-        var delay = TimeSpan.FromSeconds(5);
-        for (var attempt = 0; attempt < 3; attempt++)
+        // Download from all sources and merge (earlier sources take priority).
+        var merged = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var url in KeySources)
         {
-            if (attempt > 0)
-                await Task.Delay(delay, ct).ConfigureAwait(false);
-            delay = delay + delay; // 5 → 10 → 20 s
-
-            using var resp = await _http.GetWithRetryAsync(
-                KeysUrl, timeoutSeconds: 60, maxRetries: 1, ct: ct);
-            if (resp is null) continue;
-
-            try
+            var data = await TryDownloadSourceAsync(url, ct);
+            if (data is null) continue;
+            foreach (var (k, v) in data)
             {
-                var body = await resp.Content.ReadAsStringAsync(ct);
-                var data = JsonSerializer.Deserialize<Dictionary<string, string>>(body);
-                if (data is null || data.Count == 0) continue;
-
-                await SaveCacheAsync(body, ct);
-                _cache = data;
-                return _cache;
+                if (!merged.ContainsKey(k))
+                    merged[k] = v;
             }
-            catch { /* try next attempt */ }
         }
 
-        // Fall back to stale cache if the download failed.
-        if (File.Exists(_cacheFile))
+        if (merged.Count > 0)
         {
-            var stale = await TryLoadCacheAsync(ct, ignoreExpiry: true);
-            if (stale is not null)
-            {
-                _cache = stale;
-                return _cache;
-            }
+            // Persist only the first (primary) source for the cache envelope.
+            _cache = merged;
+            await SaveCacheAsync(merged, ct);
+            return _cache;
+        }
+
+        // Fall back to stale cache if all downloads failed.
+        var stale = await TryLoadCacheAsync(ct, ignoreExpiry: true);
+        if (stale is not null)
+        {
+            _cache = stale;
+            return _cache;
         }
 
         _cache = new Dictionary<string, string>();
         return _cache;
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>?> TryDownloadSourceAsync(
+        string url, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var resp = await _http.GetWithRetryAsync(
+                url, timeoutSeconds: 60, maxRetries: 1, ct: ct);
+            if (resp is null) continue;
+            try
+            {
+                var body = await resp.Content.ReadAsStringAsync(ct);
+                var data = ParseDepotKeysJson(body);
+                if (data is { Count: > 0 }) return data;
+            }
+            catch { /* try next attempt */ }
+        }
+        return null;
     }
 
     public async Task<string?> GetKeyAsync(string depotId, CancellationToken ct = default)
@@ -107,12 +127,29 @@ public sealed class DepotKeyService : IDepotKeyService
         catch { return null; }
     }
 
-    private async Task SaveCacheAsync(string dataJson, CancellationToken ct)
+    // Parses {"depotId": "hexKey"} — tolerates numeric values in JSON.
+    private static IReadOnlyDictionary<string, string>? ParseDepotKeysJson(string json)
+    {
+        var node = JsonNode.Parse(json) as JsonObject;
+        if (node is null) return null;
+
+        var result = new Dictionary<string, string>(node.Count, StringComparer.Ordinal);
+        foreach (var (k, v) in node)
+        {
+            var val = v?.ToString()?.Trim();
+            if (!string.IsNullOrEmpty(val))
+                result[k] = val;
+        }
+        return result.Count == 0 ? null : result;
+    }
+
+    private async Task SaveCacheAsync(Dictionary<string, string> data, CancellationToken ct)
     {
         try
         {
-            var envelope = $"{{\"Timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeSeconds()},\"Data\":{dataJson}}}";
-            await File.WriteAllTextAsync(_cacheFile, envelope, ct);
+            var envelope = new CacheEnvelope(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), data);
+            var json = JsonSerializer.Serialize(envelope);
+            await File.WriteAllTextAsync(_cacheFile, json, ct);
         }
         catch { /* non-fatal */ }
     }

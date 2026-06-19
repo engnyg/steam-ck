@@ -24,4 +24,9 @@ public interface ISteamDataService
     /// on failure rather than throwing.
     /// </summary>
     Task<GameInfo> GetGameInfoAsync(string appId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Downloads raw image bytes from a URL. Returns null on failure.
+    /// </summary>
+    Task<byte[]?> DownloadImageAsync(string url, CancellationToken ct = default);
 }

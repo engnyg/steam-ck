@@ -55,7 +55,10 @@ public partial class App : Application
             // Core services.
             services.AddHttpClient();
             services.AddSingleton<ISteamLocator, SteamLocator>();
-            services.AddSingleton<IEngineService, EngineService>();
+            services.AddSingleton<IEngineService>(sp =>
+                new EngineService(
+                    sp.GetRequiredService<ISteamLocator>(),
+                    sp.GetRequiredService<IHttpClientFactory>().CreateClient()));
             services.AddSingleton<IConfigService, ConfigService>();
             services.AddSingleton<IRegionDetector>(sp =>
                 new RegionDetector(sp.GetRequiredService<IHttpClientFactory>().CreateClient()));
@@ -75,7 +78,14 @@ public partial class App : Application
                 new GitHubManifestProvider(
                     sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                     sp.GetRequiredService<IGitHubMirrorClient>()));
-            services.AddSingleton<IManifestInstaller, ManifestInstaller>();
+            services.AddSingleton<IManifestInstaller>(sp =>
+                new ManifestInstaller(
+                    sp.GetRequiredService<IGitHubManifestProvider>(),
+                    sp.GetRequiredService<ISteamDataService>(),
+                    sp.GetRequiredService<IDepotKeyService>(),
+                    sp.GetRequiredService<IEngineService>(),
+                    sp.GetRequiredService<ISteamLocator>(),
+                    sp.GetRequiredService<IHttpClientFactory>().CreateClient()));
 
             // Phase 5: auto-update check
             services.AddSingleton<IUpdateService>(sp =>
