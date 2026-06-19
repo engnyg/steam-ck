@@ -25,9 +25,9 @@
     <!-- Version metadata -->
     <AssemblyName>OpenSteamUnlocker</AssemblyName>
     <RootNamespace>OpenSteamUnlocker.App</RootNamespace>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.3</Version>
+    <AssemblyVersion>1.0.3.0</AssemblyVersion>
+    <FileVersion>1.0.3.0</FileVersion>
     <Product>OpenSteam Unlocker</Product>
     <Company>OpenSteamTool Contributors</Company>
     <Copyright>© 2024 OpenSteamTool Contributors</Copyright>
