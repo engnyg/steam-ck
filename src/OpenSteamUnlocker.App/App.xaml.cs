@@ -51,6 +51,8 @@ public partial class App : Application
             services.AddSingleton<TrainersViewModel>();
             services.AddSingleton<EnginePage>();
             services.AddSingleton<EngineViewModel>();
+            services.AddSingleton<AboutPage>();
+            services.AddSingleton<AboutViewModel>();
 
             // Core services.
             services.AddHttpClient();
