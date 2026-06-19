@@ -299,7 +299,10 @@ public sealed class ManifestInstaller : IManifestInstaller
             progress?.Report("正在取得 DLC 清單…");
             var dlcIds = await _steamData.GetDlcIdsAsync(appId, ct);
             if (dlcIds.Count > 0)
-                lua = LuaManifestBuilder.AppendFreeDlc(lua, dlcIds);
+            {
+                var allKeys = await _depotKeys.GetAllKeysAsync(ct);
+                lua = LuaManifestBuilder.AppendFreeDlc(lua, dlcIds, allKeys);
+            }
         }
 
         await _engine.WriteLuaAsync(appId, lua, ct);

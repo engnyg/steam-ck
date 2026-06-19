@@ -11,13 +11,15 @@ public partial class AboutViewModel : ObservableObject
         "v" + (Assembly.GetExecutingAssembly()
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion?.Split('+')[0]
-            ?? "1.0.2");
+            ?? "1.0.3");
 
-    public string AppName    { get; } = "OpenSteam Unlocker";
-    public string GitHubUrl  { get; } = "https://github.com/engnyg/steamtool-";
-    public string CopyrightYear { get; } = DateTime.Now.Year.ToString();
+    public string AppName { get; } = "OpenSteam Unlocker";
 
     [RelayCommand]
-    private void OpenGitHub() =>
-        Process.Start(new ProcessStartInfo(GitHubUrl) { UseShellExecute = true });
+    private void OpenWebsite() =>
+        Process.Start(new ProcessStartInfo("https://engnyg.win/") { UseShellExecute = true });
+
+    [RelayCommand]
+    private void OpenDiscord() =>
+        Process.Start(new ProcessStartInfo("https://dc.engnyg.win/") { UseShellExecute = true });
 }

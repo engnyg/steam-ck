@@ -70,13 +70,15 @@ public static class LuaManifestBuilder
     }
 
     /// <summary>
-    /// Appends free-DLC <c>addappid</c> lines, skipping any already present.
-    /// Mirrors <c>_add_free_dlcs_to_lua</c>.
+    /// Appends DLC <c>addappid</c> lines, skipping any already present.
+    /// If a Sudama key is available for the DLC depot, writes a keyed line;
+    /// otherwise writes a bare ownership line.
     /// </summary>
-    public static string AppendFreeDlc(string existingLua, IEnumerable<string> dlcAppIds)
+    public static string AppendFreeDlc(
+        string existingLua,
+        IEnumerable<string> dlcAppIds,
+        IReadOnlyDictionary<string, string>? sudamaKeys = null)
     {
-        // Collect all appids already present (with or without key) to avoid duplicates.
-        // Matches both addappid(123) and addappid(123, 1, "key").
         var existingIds = new HashSet<string>(
             Regex.Matches(existingLua, @"addappid\((\d+)")
                  .Select(m => m.Groups[1].Value),
@@ -88,11 +90,17 @@ public static class LuaManifestBuilder
 
         foreach (var dlc in dlcAppIds)
         {
-            if (!existingIds.Contains(dlc))
-            {
+            if (existingIds.Contains(dlc)) continue;
+
+            if (sudamaKeys is not null &&
+                sudamaKeys.TryGetValue(dlc, out var key) &&
+                key is { Length: 64 } &&
+                key.All(Uri.IsHexDigit))
+                sb.Append($"addappid({dlc}, 1, \"{key}\")").Append('\n');
+            else
                 sb.Append($"addappid({dlc})").Append('\n');
-                existingIds.Add(dlc);
-            }
+
+            existingIds.Add(dlc);
         }
 
         return sb.ToString();

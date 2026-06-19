@@ -60,7 +60,7 @@
                     <TextBlock
                         FontSize="14"
                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                        Text="一款專為台灣玩家設計的 Steam 解鎖工具，整合多個開源 manifest 資料庫，自動生成 OpenSteamTool 所需的 Lua 腳本，讓您輕鬆入庫遊戲。"
+                        Text="Steam 解鎖工具讓您輕鬆入庫遊戲。"
                         TextWrapping="Wrap" />
                 </StackPanel>
             </ui:Card>
@@ -75,85 +75,16 @@
                         Text="相關連結" />
 
                     <ui:Button
-                        Command="{Binding ViewModel.OpenGitHubCommand}"
-                        Content="{Binding ViewModel.GitHubUrl, Mode=OneWay}"
-                        Icon="{ui:SymbolIcon Open24}" />
+                        Command="{Binding ViewModel.OpenWebsiteCommand}"
+                        Content="engnyg.win"
+                        Icon="{ui:SymbolIcon Globe24}" />
+                    <ui:Button
+                        Margin="0,8,0,0"
+                        Command="{Binding ViewModel.OpenDiscordCommand}"
+                        Content="dc.engnyg.win"
+                        Icon="{ui:SymbolIcon ChatBubblesQuestion24}" />
                 </StackPanel>
             </ui:Card>
-
-            <!--  Tech Stack Card  -->
-            <ui:Card Margin="0,12,0,0">
-                <StackPanel>
-                    <TextBlock
-                        Margin="0,0,0,12"
-                        FontSize="13"
-                        FontWeight="SemiBold"
-                        Text="技術資訊" />
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition />
-                            <RowDefinition />
-                            <RowDefinition />
-                            <RowDefinition />
-                        </Grid.RowDefinitions>
-
-                        <TextBlock
-                            Grid.Row="0" Grid.Column="0"
-                            Margin="0,0,24,6"
-                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                            Text="框架" />
-                        <TextBlock
-                            Grid.Row="0" Grid.Column="1"
-                            Margin="0,0,0,6"
-                            Text=".NET 10 / WPF" />
-
-                        <TextBlock
-                            Grid.Row="1" Grid.Column="0"
-                            Margin="0,0,24,6"
-                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                            Text="UI 套件" />
-                        <TextBlock
-                            Grid.Row="1" Grid.Column="1"
-                            Margin="0,0,0,6"
-                            Text="WPF-UI (Fluent Design)" />
-
-                        <TextBlock
-                            Grid.Row="2" Grid.Column="0"
-                            Margin="0,0,24,6"
-                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                            Text="金鑰來源" />
-                        <TextBlock
-                            Grid.Row="2" Grid.Column="1"
-                            Margin="0,0,0,6"
-                            Text="Sudama DB / ManifestAutoUpdate" />
-
-                        <TextBlock
-                            Grid.Row="3" Grid.Column="0"
-                            Margin="0,0,24,0"
-                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                            Text="引擎" />
-                        <TextBlock
-                            Grid.Row="3" Grid.Column="1"
-                            Text="OpenSteamTool" />
-                    </Grid>
-                </StackPanel>
-            </ui:Card>
-
-            <!--  Copyright  -->
-            <TextBlock
-                Margin="0,16,0,0"
-                FontSize="12"
-                Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                HorizontalAlignment="Center">
-                <Run Text="© " />
-                <Run Text="{Binding ViewModel.CopyrightYear, Mode=OneWay}" />
-                <Run Text=" engnyg — 開源 MIT 授權" />
-            </TextBlock>
 
         </StackPanel>
     </ScrollViewer>
