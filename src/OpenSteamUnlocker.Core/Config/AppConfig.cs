@@ -84,6 +84,9 @@ public sealed class AppConfig
     /// </summary>
     [JsonPropertyName("update_repo_slug")]
     public string UpdateRepoSlug { get; set; } = string.Empty;
+
+    [JsonPropertyName("steam_license_key")]
+    public string SteamLicenseKey { get; set; } = string.Empty;
 }
 
 public sealed class CustomRepos

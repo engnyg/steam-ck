@@ -9,6 +9,7 @@ using OpenSteamUnlocker.App.Views.Pages;
 using OpenSteamUnlocker.Core.Config;
 using OpenSteamUnlocker.Core.Engine;
 using OpenSteamUnlocker.Core.Http;
+using OpenSteamUnlocker.Core.License;
 using OpenSteamUnlocker.Core.Manifest.Providers;
 using OpenSteamUnlocker.Core.Manifest.Services;
 using OpenSteamUnlocker.Core.Steam;
@@ -94,6 +95,13 @@ public partial class App : Application
                 new UpdateService(
                     sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
                     sp.GetRequiredService<IConfigService>()));
+
+            // License verification
+            services.AddSingleton<ILicenseService>(sp =>
+                new LicenseService(
+                    sp.GetRequiredService<IHttpClientFactory>().CreateClient()));
+            services.AddTransient<LicenseViewModel>();
+            services.AddTransient<LicenseWindow>();
         })
         .Build();
 
@@ -104,7 +112,22 @@ public partial class App : Application
     private async void OnStartup(object sender, StartupEventArgs e)
     {
         await _host.StartAsync();
-        GetService<MainWindow>().Show();
+
+        // Silent re-verify if a key is already saved
+        var config = GetService<IConfigService>();
+        if (!string.IsNullOrEmpty(config.Current.SteamLicenseKey))
+        {
+            var license = GetService<ILicenseService>();
+            var result = await license.VerifyAsync(config.Current.SteamLicenseKey);
+            if (result.IsValid)
+            {
+                GetService<MainWindow>().Show();
+                return;
+            }
+        }
+
+        // Show license input window (validated → opens MainWindow automatically)
+        GetService<LicenseWindow>().Show();
     }
 
     private async void OnExit(object sender, ExitEventArgs e)
