@@ -32,7 +32,7 @@ public partial class SearchViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(SearchCommand))]
     private string _query = string.Empty;
 
-    [ObservableProperty] private bool _autoUpdate  = false;
+    [ObservableProperty] private bool _autoUpdate  = true;
     [ObservableProperty] private bool _addAllDlc   = true;
 
     public IReadOnlyList<SourceItem> SourceItems { get; } =

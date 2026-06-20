@@ -59,6 +59,7 @@
                     MinWidth="140"
                     Margin="24,0,0,0"
                     VerticalAlignment="Center"
+                    Visibility="Collapsed"
                     ItemsSource="{Binding ViewModel.SourceItems}"
                     SelectedItem="{Binding ViewModel.SelectedSourceItem, Mode=TwoWay}"
                     DisplayMemberPath="Label" />
