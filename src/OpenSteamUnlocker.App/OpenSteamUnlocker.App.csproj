@@ -29,9 +29,9 @@
     <AssemblyVersion>1.0.3.0</AssemblyVersion>
     <FileVersion>1.0.3.0</FileVersion>
     <Product>OpenSteam Unlocker</Product>
-    <Company>OpenSteamTool Contributors</Company>
-    <Copyright>© 2024 OpenSteamTool Contributors</Copyright>
-    <Description>Steam library unlocker with manifest installer and OpenSteamTool engine integration</Description>
+    <Company>LYSTORE</Company>
+    <Copyright>© 2024 LYSTORE</Copyright>
+    <Description>Steam library unlocker with manifest installer and engine integration</Description>
     <NeutralLanguage>zh-TW</NeutralLanguage>
   </PropertyGroup>
 
