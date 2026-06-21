@@ -119,6 +119,16 @@ public partial class App : Application
 
     private async void OnStartup(object sender, StartupEventArgs e)
     {
+        var blocked = GuardService.DetectBlockedProcess();
+        if (blocked is not null)
+        {
+            MessageBox.Show(
+                $"請先關閉 {blocked} 後再啟動。",
+                "無法啟動", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
+
         if (GuardService.IsBeingDebugged())
         {
             Shutdown();

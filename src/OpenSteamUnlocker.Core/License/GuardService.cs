@@ -5,6 +5,24 @@ namespace OpenSteamUnlocker.Core.License;
 
 public sealed class GuardService : IDisposable
 {
+    private static readonly string[] _blockedProcesses =
+    [
+        "procmon", "procmon64",
+        "procexp", "procexp64",
+        "wireshark", "tshark", "rawcap",
+        "fiddler", "charles",
+        "x64dbg", "x32dbg", "ollydbg",
+        "ida", "ida64", "idaq", "idaq64",
+        "ghidra", "binaryninja",
+        "dnspy", "dnspy-x86", "dotpeek", "ilspy",
+        "cheatengine", "cheatengine-x86_64",
+        "httpdebugger", "httpdebuggerui",
+        "resourcehacker", "pe-bear", "pestudio",
+        "apimonitor", "apimonitor-x64",
+        "hxd", "hxd64",
+        "processhacker",
+    ];
+
     private readonly ILicenseService _license;
     private readonly Func<string?> _getKey;
     private readonly Func<Task> _onViolation;
@@ -33,22 +51,45 @@ public sealed class GuardService : IDisposable
     public static bool IsBeingDebugged()
     {
         if (Debugger.IsAttached) return true;
-
         try { if (IsDebuggerPresent()) return true; } catch { }
-
         try
         {
             CheckRemoteDebuggerPresent(Process.GetCurrentProcess().Handle, out var remote);
             if (remote) return true;
         }
         catch { }
-
         return false;
     }
 
+    public static string? DetectBlockedProcess()
+    {
+        try
+        {
+            foreach (var proc in Process.GetProcesses())
+            {
+                try
+                {
+                    var name = proc.ProcessName.ToLowerInvariant()
+                        .Replace(" ", "").Replace("-", "");
+                    foreach (var blocked in _blockedProcesses)
+                    {
+                        if (name.Contains(blocked.Replace("-", "")))
+                            return proc.ProcessName;
+                    }
+                }
+                catch { }
+                finally { proc.Dispose(); }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    public static bool HasThreats() => IsBeingDebugged() || DetectBlockedProcess() is not null;
+
     private void DebugCheckCallback(object? state)
     {
-        if (IsBeingDebugged())
+        if (HasThreats())
             _onViolation().ConfigureAwait(false);
     }
 
