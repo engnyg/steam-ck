@@ -3,30 +3,35 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
+using OpenSteamUnlocker.Core.License;
 using OpenSteamUnlocker.Core.Steam;
 
 namespace OpenSteamUnlocker.Core.Engine;
 
-/// <summary>
-/// Default <see cref="IEngineService"/>. Prefers bundled engine binaries under
-/// <c>&lt;app&gt;/engine/</c>; falls back to downloading the latest
-/// OpenSteamTool GitHub Release automatically.
-/// </summary>
 public sealed class EngineService : IEngineService
 {
     private const string ReleaseApiUrl =
         "https://api.github.com/repos/OpenSteam001/OpenSteamTool/releases/latest";
 
-    private readonly ISteamLocator _steam;
-    private readonly HttpClient    _http;
-    private readonly string _bundledEngineDir;
+    private static readonly string[] _obfuscatedNames = ["res_a.dat", "res_b.dat", "res_c.dat"];
+
+    private readonly ISteamLocator  _steam;
+    private readonly HttpClient     _http;
+    private readonly ILicenseService? _license;
+    private readonly Func<string?>?  _getKey;
+    private readonly string _cacheDir;
     private readonly string _backupDir;
 
-    public EngineService(ISteamLocator steam, HttpClient http)
+    public EngineService(ISteamLocator steam, HttpClient http,
+        ILicenseService? license = null, Func<string?>? getKey = null)
     {
-        _steam = steam;
-        _http  = http;
-        _bundledEngineDir = Path.Combine(AppContext.BaseDirectory, "engine");
+        _steam   = steam;
+        _http    = http;
+        _license = license;
+        _getKey  = getKey;
+        _cacheDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "OpenSteamUnlocker", "cache");
         _backupDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "OpenSteamUnlocker", "backup", "engine");
@@ -61,7 +66,7 @@ public sealed class EngineService : IEngineService
             Installed = steamPath is not null && missing.Count == 0,
             PresentFiles = present,
             MissingFiles = missing,
-            BinariesBundled = BinariesAreBundled(),
+            BinariesBundled = HasCachedPayload(),
             LuaDirectory = luaDir,
             InstalledApps = ListInstalledApps(luaDir),
             PatternUpToDate = patternUpToDate,
@@ -71,54 +76,172 @@ public sealed class EngineService : IEngineService
 
     public async Task InstallAsync(IProgress<string>? progress = null, CancellationToken ct = default)
     {
+        await RequireLicenseAsync();
+
         var steamPath = RequireSteamPath();
         Directory.CreateDirectory(_backupDir);
 
         progress?.Report("正在初始化…");
 
-        foreach (var proc in Process.GetProcessesByName("steam"))
-        {
-            try { proc.Kill(); } catch { }
-        }
+        KillSteam();
         await Task.Delay(2000, ct).ConfigureAwait(false);
 
-        if (BinariesAreBundled())
+        Dictionary<string, byte[]> dlls;
+
+        if (HasCachedPayload())
         {
-            var dlls = EngineFiles.All.ToDictionary(
-                dll => dll,
-                dll => File.ReadAllBytes(Path.Combine(_bundledEngineDir, dll)));
-            await InstallDllsAsync(dlls, steamPath, ct).ConfigureAwait(false);
+            dlls = LoadFromCache();
         }
         else
         {
-            var zipBytes = await DownloadReleaseZipAsync(null, ct).ConfigureAwait(false);
-            var dlls = ExtractDllsFromZip(zipBytes);
-            await InstallDllsAsync(dlls, steamPath, ct).ConfigureAwait(false);
+            var zipBytes = await DownloadReleaseZipAsync(ct).ConfigureAwait(false);
+            dlls = ExtractDllsFromZip(zipBytes);
+            SaveToCache(dlls);
+
             await InstallPatternFilesFromZipAsync(zipBytes, steamPath, ct).ConfigureAwait(false);
         }
 
+        await InstallDllsAsync(dlls, steamPath, ct).ConfigureAwait(false);
         await EnsureTomlAsync(ct).ConfigureAwait(false);
+        CleanupTempEngine();
         progress?.Report("初始化完成！請重新啟動 Steam。");
     }
 
-    private async Task InstallDllsAsync(Dictionary<string, byte[]> dlls, string steamPath, CancellationToken ct)
+    public async Task UninstallAsync(CancellationToken ct = default)
     {
-        foreach (var (dll, bytes) in dlls)
+        var steamPath = RequireSteamPath();
+
+        KillSteam();
+        await Task.Delay(2000, ct).ConfigureAwait(false);
+
+        foreach (var dll in EngineFiles.All)
         {
             var target = Path.Combine(steamPath, dll);
-            if (File.Exists(target))
+            var backup = Path.Combine(_backupDir, dll);
+
+            TryDelete(target);
+
+            if (File.Exists(backup))
             {
-                var backup = Path.Combine(_backupDir, dll);
-                if (!File.Exists(backup))
-                    File.Copy(target, backup, overwrite: false);
+                try { File.Copy(backup, target, overwrite: true); } catch { }
+                TryDelete(backup);
             }
-            await File.WriteAllBytesAsync(target, bytes, ct).ConfigureAwait(false);
+        }
+
+        ClearCache();
+    }
+
+    public async Task UpdatePatternsAsync(IProgress<string>? progress = null, CancellationToken ct = default)
+    {
+        await RequireLicenseAsync();
+
+        var steamPath = RequireSteamPath();
+        progress?.Report("正在更新…");
+        var zipBytes = await DownloadReleaseZipAsync(ct).ConfigureAwait(false);
+        await InstallPatternFilesFromZipAsync(zipBytes, steamPath, ct).ConfigureAwait(false);
+        progress?.Report("更新完成！請重新啟動 Steam。");
+    }
+
+    public async Task WriteLuaAsync(string appId, string luaContent, CancellationToken ct = default)
+    {
+        var luaDir = RequireLuaDir();
+        Directory.CreateDirectory(luaDir);
+        await File.WriteAllTextAsync(Path.Combine(luaDir, $"{appId}.lua"), luaContent, ct).ConfigureAwait(false);
+    }
+
+    public Task RemoveLuaAsync(string appId, CancellationToken ct = default)
+    {
+        var dir = RequireLuaDir();
+        TryDelete(Path.Combine(dir, $"{appId}.lua"));
+        return Task.CompletedTask;
+    }
+
+    public async Task<string?> ReadLuaAsync(string appId, CancellationToken ct = default)
+    {
+        var dir = _steam.LuaConfigPath;
+        if (dir is null) return null;
+        var path = Path.Combine(dir, $"{appId}.lua");
+        return File.Exists(path)
+            ? await File.ReadAllTextAsync(path, ct).ConfigureAwait(false)
+            : null;
+    }
+
+    public async Task EnsureTomlAsync(CancellationToken ct = default)
+    {
+        var steamPath = RequireSteamPath();
+        var tomlPath = Path.Combine(steamPath, "opensteamtool.toml");
+        if (!File.Exists(tomlPath))
+            await File.WriteAllTextAsync(tomlPath, DefaultToml, ct).ConfigureAwait(false);
+    }
+
+    // --- license gate ---------------------------------------------------------
+
+    private async Task RequireLicenseAsync()
+    {
+        if (_license is null || _getKey is null) return;
+        var key = _getKey();
+        if (string.IsNullOrEmpty(key))
+            throw new InvalidOperationException("未授權，請先驗證金鑰。");
+        var result = await _license.VerifyAsync(key);
+        if (!result.IsValid)
+            throw new InvalidOperationException("授權無效，操作已取消。");
+    }
+
+    // --- encrypted cache (obfuscated names) -----------------------------------
+
+    private void SaveToCache(Dictionary<string, byte[]> dlls)
+    {
+        Directory.CreateDirectory(_cacheDir);
+        var files = EngineFiles.All;
+        for (int i = 0; i < files.Count && i < _obfuscatedNames.Length; i++)
+        {
+            var encrypted = PayloadCrypto.Encrypt(dlls[files[i]]);
+            File.WriteAllBytes(Path.Combine(_cacheDir, _obfuscatedNames[i]), encrypted);
         }
     }
 
-    private async Task<byte[]> DownloadReleaseZipAsync(IProgress<string>? progress, CancellationToken ct)
+    private Dictionary<string, byte[]> LoadFromCache()
     {
-        _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "OpenSteamUnlocker");
+        var result = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        var files = EngineFiles.All;
+        for (int i = 0; i < files.Count && i < _obfuscatedNames.Length; i++)
+        {
+            var encrypted = File.ReadAllBytes(Path.Combine(_cacheDir, _obfuscatedNames[i]));
+            result[files[i]] = PayloadCrypto.Decrypt(encrypted);
+        }
+        return result;
+    }
+
+    private bool HasCachedPayload() =>
+        Directory.Exists(_cacheDir) &&
+        _obfuscatedNames.All(f => File.Exists(Path.Combine(_cacheDir, f)));
+
+    private void ClearCache()
+    {
+        if (!Directory.Exists(_cacheDir)) return;
+        foreach (var f in _obfuscatedNames)
+            TryDelete(Path.Combine(_cacheDir, f));
+    }
+
+    // --- temp cleanup ---------------------------------------------------------
+
+    private static void CleanupTempEngine()
+    {
+        try
+        {
+            var baseDir = AppContext.BaseDirectory;
+            var engineDir = Path.Combine(baseDir, "engine");
+            if (Directory.Exists(engineDir))
+                Directory.Delete(engineDir, recursive: true);
+        }
+        catch { }
+    }
+
+    // --- download -------------------------------------------------------------
+
+    private async Task<byte[]> DownloadReleaseZipAsync(CancellationToken ct)
+    {
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0");
         var metaJson = await _http.GetStringAsync(ReleaseApiUrl, ct).ConfigureAwait(false);
 
         string? zipUrl = null;
@@ -139,8 +262,24 @@ public sealed class EngineService : IEngineService
         if (zipUrl is null)
             throw new InvalidOperationException("找不到 Release 下載連結。");
 
-        progress?.Report("正在下載…");
         return await _http.GetByteArrayAsync(zipUrl, ct).ConfigureAwait(false);
+    }
+
+    // --- install helpers ------------------------------------------------------
+
+    private async Task InstallDllsAsync(Dictionary<string, byte[]> dlls, string steamPath, CancellationToken ct)
+    {
+        foreach (var (dll, bytes) in dlls)
+        {
+            var target = Path.Combine(steamPath, dll);
+            if (File.Exists(target))
+            {
+                var backup = Path.Combine(_backupDir, dll);
+                if (!File.Exists(backup))
+                    File.Copy(target, backup, overwrite: false);
+            }
+            await File.WriteAllBytesAsync(target, bytes, ct).ConfigureAwait(false);
+        }
     }
 
     private static Dictionary<string, byte[]> ExtractDllsFromZip(byte[] zipBytes)
@@ -160,8 +299,7 @@ public sealed class EngineService : IEngineService
 
         var missing = EngineFiles.All.Where(dll => !result.ContainsKey(dll)).ToList();
         if (missing.Count > 0)
-            throw new InvalidOperationException(
-                $"Release 壓縮檔中缺少以下 DLL：{string.Join(", ", missing)}");
+            throw new InvalidOperationException("缺少必要元件。");
 
         return result;
     }
@@ -177,7 +315,7 @@ public sealed class EngineService : IEngineService
 
         foreach (var entry in archive.Entries)
         {
-            if (string.IsNullOrEmpty(entry.Name)) continue; // directory entry
+            if (string.IsNullOrEmpty(entry.Name)) continue;
             if (!entry.Name.EndsWith(".toml", StringComparison.OrdinalIgnoreCase)) continue;
             var entryPath = entry.FullName.Replace('\\', '/');
             if (!entryPath.Contains("pattern/steamclient/", StringComparison.OrdinalIgnoreCase)) continue;
@@ -190,75 +328,15 @@ public sealed class EngineService : IEngineService
         }
     }
 
-    public async Task UpdatePatternsAsync(IProgress<string>? progress = null, CancellationToken ct = default)
-    {
-        var steamPath = RequireSteamPath();
-        progress?.Report("正在從 GitHub 取得最新 Release…");
-        var zipBytes = await DownloadReleaseZipAsync(progress, ct).ConfigureAwait(false);
-        progress?.Report("正在安裝 Pattern 檔…");
-        await InstallPatternFilesFromZipAsync(zipBytes, steamPath, ct).ConfigureAwait(false);
-        progress?.Report("Pattern 檔更新完成！請重新啟動 Steam。");
-    }
+    // --- common helpers -------------------------------------------------------
 
-    public async Task UninstallAsync(CancellationToken ct = default)
+    private static void KillSteam()
     {
-        var steamPath = RequireSteamPath();
-
         foreach (var proc in Process.GetProcessesByName("steam"))
         {
             try { proc.Kill(); } catch { }
         }
-        await Task.Delay(2000, ct).ConfigureAwait(false);
-
-        foreach (var dll in EngineFiles.All)
-        {
-            var target = Path.Combine(steamPath, dll);
-            var backup = Path.Combine(_backupDir, dll);
-
-            TryDelete(target);
-
-            if (File.Exists(backup))
-            {
-                try { File.Copy(backup, target, overwrite: true); } catch { }
-                TryDelete(backup);
-            }
-        }
     }
-
-    public async Task WriteLuaAsync(string appId, string luaContent, CancellationToken ct = default)
-    {
-        var luaDir = RequireLuaDir();
-        Directory.CreateDirectory(luaDir);
-        await File.WriteAllTextAsync(Path.Combine(luaDir, $"{appId}.lua"), luaContent, ct).ConfigureAwait(false);
-    }
-
-    public Task RemoveLuaAsync(string appId, CancellationToken ct = default)
-    {
-        var dir = RequireLuaDir();
-        TryDelete(Path.Combine(dir, $"{appId}.lua"));
-        return Task.CompletedTask;
-    }
-
-    public async Task<string?> ReadLuaAsync(string appId, CancellationToken ct = default)
-    {
-        var dir = _steam.LuaConfigPath;
-        if (dir is null)
-            return null;
-        var path = Path.Combine(dir, $"{appId}.lua");
-        return File.Exists(path)
-            ? await File.ReadAllTextAsync(path, ct).ConfigureAwait(false)
-            : null;
-    }
-
-    public async Task EnsureTomlAsync(CancellationToken ct = default)
-    {
-        var steamPath = RequireSteamPath();
-        var tomlPath = Path.Combine(steamPath, "opensteamtool.toml");
-        if (!File.Exists(tomlPath))
-            await File.WriteAllTextAsync(tomlPath, DefaultToml, ct).ConfigureAwait(false);
-    }
-
-    // --- helpers -----------------------------------------------------------
 
     private static string? ComputeSteamClientHash(string steamPath)
     {
@@ -279,10 +357,6 @@ public sealed class EngineService : IEngineService
         return File.Exists(path);
     }
 
-    private bool BinariesAreBundled() =>
-        Directory.Exists(_bundledEngineDir) &&
-        EngineFiles.All.All(dll => File.Exists(Path.Combine(_bundledEngineDir, dll)));
-
     private static IReadOnlyList<string> ListInstalledApps(string? luaDir)
     {
         if (luaDir is null || !Directory.Exists(luaDir))
@@ -302,17 +376,10 @@ public sealed class EngineService : IEngineService
     private string RequireLuaDir() =>
         _steam.LuaConfigPath ?? throw new InvalidOperationException("未偵測到 Steam 安裝。");
 
-    private static async Task CopyFileAsync(string source, string target, CancellationToken ct)
-    {
-        await using var src = File.OpenRead(source);
-        await using var dst = File.Create(target);
-        await src.CopyToAsync(dst, ct).ConfigureAwait(false);
-    }
-
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
-        catch { /* best effort */ }
+        catch { }
     }
 
     private const string DefaultToml = """
@@ -323,7 +390,6 @@ public sealed class EngineService : IEngineService
         level = "info"
 
         [manifest]
-        # "opensteamtool" (default) | "wudrm" (China) | "steamrun"
         url = "opensteamtool"
         timeout_resolve_ms = 5000
         timeout_connect_ms = 5000
@@ -331,7 +397,6 @@ public sealed class EngineService : IEngineService
         timeout_recv_ms    = 10000
 
         [lua]
-        # Default <Steam>/config/lua is always loaded last.
 
         [inject]
         enabled = false

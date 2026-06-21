@@ -60,11 +60,17 @@ public partial class App : Application
             // Core services.
             services.AddHttpClient();
             services.AddSingleton<ISteamLocator, SteamLocator>();
-            services.AddSingleton<IEngineService>(sp =>
-                new EngineService(
-                    sp.GetRequiredService<ISteamLocator>(),
-                    sp.GetRequiredService<IHttpClientFactory>().CreateClient()));
             services.AddSingleton<IConfigService, ConfigService>();
+            services.AddSingleton<IEngineService>(sp =>
+            {
+                var config = sp.GetRequiredService<IConfigService>();
+                var license = sp.GetRequiredService<ILicenseService>();
+                return new EngineService(
+                    sp.GetRequiredService<ISteamLocator>(),
+                    sp.GetRequiredService<IHttpClientFactory>().CreateClient(),
+                    license,
+                    () => ResolveKey(config.Current.SteamLicenseKey));
+            });
             services.AddSingleton<IRegionDetector>(sp =>
                 new RegionDetector(sp.GetRequiredService<IHttpClientFactory>().CreateClient()));
             services.AddSingleton<IGitHubMirrorClient>(sp =>
