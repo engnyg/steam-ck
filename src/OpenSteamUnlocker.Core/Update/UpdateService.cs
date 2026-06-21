@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
@@ -57,5 +58,37 @@ public sealed class UpdateService : IUpdateService
             return new UpdateInfo(tag, releaseUrl, dlUrl, notes);
         }
         catch { return null; }
+    }
+
+    public async Task ApplyUpdateAsync(UpdateInfo info, CancellationToken ct = default)
+    {
+        if (info.DownloadUrl is null)
+            throw new InvalidOperationException("無下載連結。");
+
+        var currentExe = Environment.ProcessPath
+            ?? throw new InvalidOperationException("無法取得目前執行檔路徑。");
+        var dir = Path.GetDirectoryName(currentExe)!;
+        var tempPath = Path.Combine(dir, $"update_{info.Version}.exe");
+
+        using (var stream = await _http.GetStreamAsync(info.DownloadUrl, ct))
+        await using (var fs = File.Create(tempPath))
+            await stream.CopyToAsync(fs, ct);
+
+        var bat = Path.Combine(dir, "_update.bat");
+        var script = $"""
+            @echo off
+            timeout /t 2 /nobreak >nul
+            move /y "{tempPath}" "{currentExe}"
+            start "" "{currentExe}"
+            del "%~f0"
+            """;
+        await File.WriteAllTextAsync(bat, script, ct);
+
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = bat,
+            CreateNoWindow = true,
+            UseShellExecute = false,
+        });
     }
 }

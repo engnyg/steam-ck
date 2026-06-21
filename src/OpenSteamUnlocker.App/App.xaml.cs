@@ -25,6 +25,8 @@ namespace OpenSteamUnlocker.App;
 /// </summary>
 public partial class App : Application
 {
+    private static GuardService? _guard;
+
     private static readonly IHost _host = Host
         .CreateDefaultBuilder()
         .ConfigureServices((context, services) =>
@@ -111,30 +113,77 @@ public partial class App : Application
 
     private async void OnStartup(object sender, StartupEventArgs e)
     {
+        if (GuardService.IsBeingDebugged())
+        {
+            Shutdown();
+            return;
+        }
+
         await _host.StartAsync();
 
-        // Load saved config from disk
         var config = GetService<IConfigService>();
         await config.LoadAsync();
-        if (config.Current.AutoLogin && !string.IsNullOrEmpty(config.Current.SteamLicenseKey))
+
+        // Forced auto-update
+        try
         {
-            var license = GetService<ILicenseService>();
-            var result = await license.VerifyAsync(config.Current.SteamLicenseKey);
-            if (result.IsValid)
+            var updates = GetService<IUpdateService>();
+            var info = await updates.CheckForUpdateAsync();
+            if (info?.DownloadUrl is not null)
             {
-                GetService<MainWindow>().Show();
+                await updates.ApplyUpdateAsync(info);
+                Shutdown();
                 return;
             }
+        }
+        catch { }
 
-            // Key disabled/invalid → remove engine
+        if (config.Current.AutoLogin && !string.IsNullOrEmpty(config.Current.SteamLicenseKey))
+        {
+            var key = ResolveKey(config.Current.SteamLicenseKey);
+            if (key is not null)
+            {
+                var license = GetService<ILicenseService>();
+                var result = await license.VerifyAsync(key);
+                if (result.IsValid)
+                {
+                    StartGuard(config, key);
+                    GetService<MainWindow>().Show();
+                    return;
+                }
+            }
+
             try { await GetService<IEngineService>().UninstallAsync(CancellationToken.None); } catch { }
             config.Current.SteamLicenseKey = string.Empty;
             config.Current.AutoLogin = false;
             await config.SaveAsync();
         }
 
-        // Show license input window (validated → opens MainWindow automatically)
         GetService<LicenseWindow>().Show();
+    }
+
+    public static void StartGuard(IConfigService config, string plainKey)
+    {
+        _guard?.Dispose();
+        _guard = new GuardService(
+            GetService<ILicenseService>(),
+            () => ResolveKey(config.Current.SteamLicenseKey),
+            async () =>
+            {
+                try { await GetService<IEngineService>().UninstallAsync(CancellationToken.None); } catch { }
+                config.Current.SteamLicenseKey = string.Empty;
+                config.Current.AutoLogin = false;
+                await config.SaveAsync();
+                Current.Dispatcher.Invoke(() => Current.Shutdown());
+            });
+    }
+
+    private static string? ResolveKey(string stored)
+    {
+        if (string.IsNullOrEmpty(stored)) return null;
+        if (KeyProtector.IsProtected(stored))
+            return KeyProtector.Unprotect(stored);
+        return stored;
     }
 
     private async void OnExit(object sender, ExitEventArgs e)

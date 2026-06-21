@@ -25,7 +25,10 @@ public partial class LicenseViewModel : ObservableObject
         _license   = license;
         _config    = config;
         _engine    = engine;
-        LicenseKey = config.Current.SteamLicenseKey;
+        var stored = config.Current.SteamLicenseKey;
+        LicenseKey = KeyProtector.IsProtected(stored)
+            ? KeyProtector.Unprotect(stored) ?? string.Empty
+            : stored;
         AutoLogin  = config.Current.AutoLogin;
     }
 
@@ -45,12 +48,14 @@ public partial class LicenseViewModel : ObservableObject
 
         try
         {
-            var result = await _license.VerifyAsync(LicenseKey.Trim());
+            var plainKey = LicenseKey.Trim();
+            var result = await _license.VerifyAsync(plainKey);
             if (result.IsValid)
             {
-                _config.Current.SteamLicenseKey = LicenseKey.Trim();
+                _config.Current.SteamLicenseKey = KeyProtector.Protect(plainKey);
                 _config.Current.AutoLogin = AutoLogin;
                 await _config.SaveAsync();
+                App.StartGuard(_config, plainKey);
                 StatusMessage = "驗證成功！";
                 LicenseAccepted?.Invoke();
             }

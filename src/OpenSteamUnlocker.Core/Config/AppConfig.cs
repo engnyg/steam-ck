@@ -83,7 +83,7 @@ public sealed class AppConfig
     /// Empty string disables the auto-update check.
     /// </summary>
     [JsonPropertyName("update_repo_slug")]
-    public string UpdateRepoSlug { get; set; } = string.Empty;
+    public string UpdateRepoSlug { get; set; } = "engnyg/steamtool-";
 
     [JsonPropertyName("steam_license_key")]
     public string SteamLicenseKey { get; set; } = string.Empty;

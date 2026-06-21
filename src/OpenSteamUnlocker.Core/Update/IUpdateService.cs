@@ -14,4 +14,5 @@ public interface IUpdateService
 {
     Version CurrentVersion { get; }
     Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default);
+    Task ApplyUpdateAsync(UpdateInfo info, CancellationToken ct = default);
 }

@@ -54,23 +54,11 @@
                         FontWeight="SemiBold"
                         Foreground="#4CAF50"
                         Text="{Binding ViewModel.UpdateBannerTitle}" />
-                    <TextBlock
-                        Margin="8,0,0,0"
-                        VerticalAlignment="Center"
-                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                        Text="— 點擊下載以更新" />
                 </StackPanel>
-                <ui:Button
-                    Grid.Column="1"
-                    Margin="0,0,6,0"
-                    Appearance="Primary"
-                    Command="{Binding ViewModel.OpenUpdateDownloadCommand}"
-                    Content="下載更新"
-                    Icon="{ui:SymbolIcon ArrowDownload24}" />
                 <ui:Button
                     Grid.Column="2"
                     Command="{Binding ViewModel.DismissUpdateCommand}"
-                    Content="稍後" />
+                    Content="關閉" />
             </Grid>
         </Border>
 
