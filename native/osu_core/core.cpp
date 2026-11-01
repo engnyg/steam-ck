@@ -16,8 +16,11 @@ static const osu_auth_api* g_auth = nullptr;
 // ── Depot Key 快取 ────────────────────────────────────────────────────────
 static std::unordered_map<uint32_t, std::vector<uint8_t>> g_depot_keys;
 
-// ── AppIdInOnline ─────────────────────────────────────────────────────────
+// ── AppIdInOnline（需每次線上驗證的子集）─────────────────────────────────
 static std::vector<int> g_online_app_ids;
+
+// ── 此金鑰解鎖的 AppID（從 Auth 取得，BIsSubscribedApp 只對這些回傳 true）
+static std::vector<int> g_unlocked_app_ids;
 
 // ── 簡易 JSON depot key 解析 ──────────────────────────────────────────────
 static void parse_depot_keys(const char* json, size_t len)
@@ -93,11 +96,17 @@ void core_set_online_apps_csv(const char* csv)
 extern "C" __declspec(dllexport)
 void core_init()
 {
-    // Auth 檢查（透過 loader 傳入的函式指標）
     if (!g_auth || !g_auth->check_cached_key || !g_auth->check_cached_key())
         return;
 
-    // 安裝 vtable hooks（等 steamclient64.dll 載入後再做）
+    // 從 Auth 取得此金鑰解鎖的 AppID 清單
+    if (g_auth->get_cached_appids) {
+        int buf[512] = {};
+        int n = g_auth->get_cached_appids(buf, 512);
+        g_unlocked_app_ids.assign(buf, buf + n);
+    }
+
+    // 等 steamclient64.dll 載入後安裝 hooks
     for (int i = 0; i < 60; i++) {
         if (GetModuleHandleA("steamclient64.dll") ||
             GetModuleHandleA("steamclient.dll"))
@@ -116,6 +125,19 @@ const uint8_t* core_get_depot_key(uint32_t depot_id, size_t* out_len)
     }
     if (out_len) *out_len = it->second.size();
     return it->second.data();
+}
+
+bool core_is_unlocked_app(int appid)
+{
+    return std::find(g_unlocked_app_ids.begin(), g_unlocked_app_ids.end(), appid)
+           != g_unlocked_app_ids.end();
+}
+
+void core_update_unlocked_apps(const int* ids, int count)
+{
+    // CDK 輸入成功後熱更新解鎖清單，無需重啟 Steam
+    if (ids && count > 0)
+        g_unlocked_app_ids.assign(ids, ids + count);
 }
 
 bool core_is_online_app(int appid)

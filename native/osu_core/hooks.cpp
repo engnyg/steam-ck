@@ -39,6 +39,11 @@ static bool __fastcall hook_BIsSubscribedApp(void* this_, uint32_t appid)
     if (!auth || !auth->check_cached_key || !auth->check_cached_key())
         return orig_BIsSubscribedApp(this_, appid);
 
+    // 只對此金鑰解鎖的 AppID 回傳 true（精確到遊戲/DLC）
+    if (!core_is_unlocked_app(static_cast<int>(appid)))
+        return orig_BIsSubscribedApp(this_, appid);
+
+    // AppIdInOnline 的遊戲每次需線上驗證
     if (core_is_online_app(static_cast<int>(appid))) {
         if (!auth->check_app_online || !auth->check_app_online(static_cast<int>(appid)))
             return orig_BIsSubscribedApp(this_, appid);
@@ -80,16 +85,20 @@ static EResult __fastcall hook_ActivateGameWithKey(void* this_, const char* key)
     if (is_ly) {
         auto* auth = core_get_auth();
         if (!auth || !auth->verify_key) {
-            // Auth 模組未載入，拒絕
             return k_EResultFail;
         }
 
-        bool ok = auth->verify_key(key);
-        if (ok) {
-            // 驗證成功：Steam 會顯示「已成功啟動」
+        // 驗證金鑰，取得解鎖的 AppID 清單
+        int  appids[512] = {};
+        int  count       = 512;
+        bool ok = auth->verify_key(key, appids, &count);
+
+        if (ok && count > 0) {
+            // 通知 Core 更新解鎖清單（熱更新，不需重啟 Steam）
+            core_update_unlocked_apps(appids, count);
+            // Steam 顯示「已成功啟動」
             return k_EResultOK;
         }
-        // 格式錯誤或伺服器拒絕：Steam 顯示「找不到產品」
         return k_EResultProductNotFound;
     }
 
