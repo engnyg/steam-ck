@@ -57,6 +57,11 @@ public partial class App : Application
             services.AddSingleton<AboutPage>();
             services.AddSingleton<AboutViewModel>();
 
+            // CDK activation page + service.
+            services.AddSingleton<ICdkActivationService, CdkActivationService>();
+            services.AddSingleton<CdkActivationViewModel>();
+            services.AddSingleton<CdkActivationPage>();
+
             // Core services.
             services.AddHttpClient();
             services.AddSingleton<ISteamLocator, SteamLocator>();

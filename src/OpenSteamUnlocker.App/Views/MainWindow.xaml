@@ -84,6 +84,13 @@
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
                 <ui:NavigationViewItem
+                    Content="序號啟動"
+                    TargetPageType="{x:Type pages:CdkActivationPage}">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Key24" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+                <ui:NavigationViewItem
                     Content="解鎖引擎"
                     TargetPageType="{x:Type pages:EnginePage}">
                     <ui:NavigationViewItem.Icon>
