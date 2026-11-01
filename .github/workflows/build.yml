@@ -1,0 +1,61 @@
+name: Build Native DLLs
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'native/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'native/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW-w64 and zlib
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 cmake
+
+      - name: Cross-compile zlib for MinGW
+        run: |
+          cd /tmp
+          curl -sL https://zlib.net/zlib-1.3.1.tar.gz | tar xz
+          cd zlib-1.3.1
+          CC=x86_64-w64-mingw32-gcc ./configure --prefix=/usr/x86_64-w64-mingw32 --static
+          make -j$(nproc)
+          sudo make install
+
+      - name: Configure CMake (MinGW cross-compile)
+        run: |
+          cmake -B build -S native \
+            -DCMAKE_TOOLCHAIN_FILE=native/toolchain-mingw64.cmake \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j$(nproc)
+
+      - name: List outputs
+        run: |
+          echo "=== Build outputs ==="
+          find build -name '*.dll' -o -name '*.exe' | head -20
+          ls -lh build/xinput_loader/xinput1_4.dll  || true
+          ls -lh build/osu_auth/OSU_Auth.dll        || true
+          ls -lh build/osu_core/OSU_Core.dll        || true
+
+      - name: Upload DLL artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: osu-dlls
+          path: |
+            build/xinput_loader/xinput1_4.dll
+            build/osu_auth/OSU_Auth.dll
+            build/osu_core/OSU_Core.dll
+          if-no-files-found: error

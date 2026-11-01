@@ -8,11 +8,13 @@ OSU API 伺服器
     DB_PATH       SQLite 路徑（預設 ./osu.db）
 """
 
-import os, hmac, hashlib, sqlite3, time, functools
+import os, hmac, hashlib, sqlite3, time, functools, secrets
 from pathlib import Path
 from flask import Flask, request, jsonify, abort, g
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app, resources={r"/api/admin/*": {"origins": "*"}})
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
 
@@ -220,6 +222,47 @@ def list_keys():
         "SELECT key, created_at, note, revoked, appids FROM keys ORDER BY created_at DESC"
     ).fetchall()
     return jsonify([dict(r) for r in rows])
+
+
+@app.post("/api/admin/generate_key")
+@require_admin
+def generate_key():
+    """
+    伺服器端產生有效 LY 金鑰並直接寫入 DB。
+    Body: { "appids": "730,731", "note": "CS2", "count": 1 }
+    回應: { "ok": true, "keys": ["LY-XXXXX-..."] }
+    """
+    body   = request.get_json(silent=True) or {}
+    appids = str(body.get("appids", "")).strip()
+    note   = str(body.get("note", ""))
+    count  = min(int(body.get("count", 1)), 100)
+
+    if not appids:
+        return jsonify({"ok": False, "reason": "appids_required"}), 400
+    for x in appids.split(","):
+        if not x.strip().isdigit():
+            return jsonify({"ok": False, "reason": f"invalid_appid: {x}"}), 400
+
+    generated = []
+    db = get_db()
+    for _ in range(count):
+        serial = "".join(secrets.choice(CHARSET) for _ in range(12))
+        mac    = hmac.new(HMAC_SECRET, serial.encode(), hashlib.sha256).digest()
+        check  = _to_base36(int.from_bytes(mac[:6], "big"), 8)
+        full   = serial + check
+        key    = f"LY-{full[0:5]}-{full[5:10]}-{full[10:15]}-{full[15:20]}"
+
+        try:
+            db.execute(
+                "INSERT INTO keys (key, appids, note) VALUES (?, ?, ?)",
+                (key, appids, note)
+            )
+            generated.append(key)
+        except sqlite3.IntegrityError:
+            pass  # 極罕見碰撞，跳過
+
+    db.commit()
+    return jsonify({"ok": True, "keys": generated, "appids": appids})
 
 
 # ── 啟動 ──────────────────────────────────────────────────────────────────────

@@ -1,10 +1,14 @@
 #include "core.hpp"
 
 #include <windows.h>
+#include <psapi.h>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <vector>
 #include <algorithm>
+
+#pragma comment(lib, "psapi.lib")
 
 // ── Steam EResult ─────────────────────────────────────────────────────────
 enum EResult : int {
@@ -134,6 +138,45 @@ static EResult __fastcall hook_ActivateGameWithKey(void* this_, const char* key)
     return k_EResultFail;
 }
 
+// ── Pattern Scan ─────────────────────────────────────────────────────────
+
+static uint8_t* pattern_scan(HMODULE mod, const char* pattern)
+{
+    MODULEINFO mi = {};
+    GetModuleInformation(GetCurrentProcess(), mod, &mi, sizeof(mi));
+    auto* base = static_cast<uint8_t*>(mi.lpBaseOfDll);
+    size_t size = mi.SizeOfImage;
+
+    // 解析 "48 8B ?? 0F 84 ?? ?? ?? ??" 格式（?? 為萬用位元組）
+    struct PatByte { uint8_t val; bool wild; };
+    std::vector<PatByte> bytes;
+    for (const char* p = pattern; *p;) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        if (*p == '?') {
+            bytes.push_back({0, true});
+            while (*p == '?') p++;
+        } else {
+            char hex[3] = {p[0], p[1], 0};
+            bytes.push_back({static_cast<uint8_t>(strtoul(hex, nullptr, 16)), false});
+            p += 2;
+        }
+    }
+    if (bytes.empty()) return nullptr;
+
+    for (size_t i = 0; i + bytes.size() <= size; i++) {
+        bool match = true;
+        for (size_t j = 0; j < bytes.size(); j++) {
+            if (!bytes[j].wild && base[i + j] != bytes[j].val) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return base + i;
+    }
+    return nullptr;
+}
+
 // ── Vtable Patch ──────────────────────────────────────────────────────────
 
 static void** find_iclientuser_vtable()
@@ -142,7 +185,24 @@ static void** find_iclientuser_vtable()
     if (!hSteam) hSteam = GetModuleHandleA("steamclient.dll");
     if (!hSteam) return nullptr;
 
-    // TODO: 填入實際 byte pattern（對目標版本 steamclient64.dll IDA 確認）
+    // ────────────────────────────────────────────────────────────────────
+    // TODO: 用 IDA 對目標版本 steamclient64.dll 確認以下 byte pattern
+    //
+    // 尋找方法：
+    //   1. IDA 載入 steamclient64.dll
+    //   2. 搜尋字串 "BIsSubscribedApp" 的 xref
+    //   3. 找到包含該函式的 vtable（連續函式指標陣列）
+    //   4. 取 vtable 起始前的 unique byte sequence 作為 pattern
+    //   5. 確認 VT_BIsSubscribedApp 等索引
+    //
+    // 範例（需替換為實際 pattern）：
+    // const char* sig = "48 8D 05 ?? ?? ?? ?? 48 89 01 48 8B C1 C3";
+    // auto* found = pattern_scan(hSteam, sig);
+    // if (!found) return nullptr;
+    // int32_t offset = *reinterpret_cast<int32_t*>(found + 3);
+    // return reinterpret_cast<void**>(found + 7 + offset);
+    // ────────────────────────────────────────────────────────────────────
+
     return nullptr;
 }
 
