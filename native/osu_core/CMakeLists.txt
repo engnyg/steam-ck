@@ -4,10 +4,7 @@ add_library(OSU_Core SHARED
     hooks.cpp
 )
 
-target_include_directories(OSU_Core PRIVATE
-    ../common
-    ../osu_auth
-)
+target_include_directories(OSU_Core PRIVATE ../common)
 
 target_link_libraries(OSU_Core
     PRIVATE

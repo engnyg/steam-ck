@@ -1,17 +1,11 @@
 #include "core.hpp"
-#include <auth.hpp>
 
 #include <windows.h>
 #include <cstdint>
 #include <cstring>
 #include <vector>
 
-// ── MinHook（需在 CMakeLists 引入或靜態連結）─────────────────────────────
-// 若未引入 MinHook，可改用 inline vtable patch
-// #include <MinHook.h>
-
 // ── Steam 介面 vtable 索引（x64 IClientUser） ─────────────────────────────
-// 透過模式掃描確認，與 SteamTools Core.dll 相同位置
 constexpr int VT_BIsSubscribedApp      = 163;
 constexpr int VT_GetDepotDecryptionKey = 243;
 
@@ -26,13 +20,12 @@ static GetDepotDecryptionKey_t orig_GetDepotDecryptionKey = nullptr;
 
 static bool __fastcall hook_BIsSubscribedApp(void* this_, uint32_t appid)
 {
-    // 授權檢查通過後，所有 AppID 回報「已訂閱」
-    if (!auth_check_cached_key())
+    auto* auth = core_get_auth();
+    if (!auth || !auth->check_cached_key || !auth->check_cached_key())
         return orig_BIsSubscribedApp(this_, appid);
 
-    // AppIdInOnline 需額外線上驗證
     if (core_is_online_app(static_cast<int>(appid))) {
-        if (!auth_check_app_online(static_cast<int>(appid)))
+        if (!auth->check_app_online || !auth->check_app_online(static_cast<int>(appid)))
             return orig_BIsSubscribedApp(this_, appid);
     }
     return true;
@@ -48,25 +41,19 @@ static bool __fastcall hook_GetDepotDecryptionKey(
         *key_len = static_cast<uint32_t>(klen);
         return true;
     }
-    // 未找到則回退原始實作
     if (orig_GetDepotDecryptionKey)
         return orig_GetDepotDecryptionKey(this_, depot_id, key_buf, key_len);
     return false;
 }
 
-// ── Vtable Patch（不需 MinHook） ──────────────────────────────────────────
-static void* g_steamclient_base = nullptr;
+// ── Vtable Patch ──────────────────────────────────────────────────────────
 
 static void** find_iclientuser_vtable()
 {
-    // steamclient64.dll 模組
     HMODULE hSteam = GetModuleHandleA("steamclient64.dll");
     if (!hSteam) hSteam = GetModuleHandleA("steamclient.dll");
     if (!hSteam) return nullptr;
 
-    // 模式掃描：找 IClientUser vtable
-    // "BIsSubscribedApp" 特徵 byte（依實際版本調整）
-    // 此處留空 —— 需在目標版本確認後填入
     // TODO: 填入實際 byte pattern
     return nullptr;
 }
@@ -83,8 +70,6 @@ static bool vtable_hook(void** vtable, int index, void* new_fn, void** orig_fn)
     VirtualProtect(entry, sizeof(void*), old_prot, &old_prot);
     return true;
 }
-
-// ── 公開介面 ──────────────────────────────────────────────────────────────
 
 void hooks_install()
 {

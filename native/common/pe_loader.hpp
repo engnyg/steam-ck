@@ -129,10 +129,36 @@ inline HMODULE map_from_memory(const uint8_t* data, size_t size)
 }
 
 // 從已映射模組取得函式指標
+// 反射載入的模組不在 OS 模組表內，GetProcAddress 不會找到；
+// 這裡手動解析 IMAGE_EXPORT_DIRECTORY。
+inline void* resolve_export(HMODULE h, const char* name)
+{
+    auto* base = reinterpret_cast<uint8_t*>(h);
+    auto* dos  = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+    auto* nt   = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    auto& dir  = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+    if (dir.Size == 0) return nullptr;
+
+    auto* exp  = reinterpret_cast<IMAGE_EXPORT_DIRECTORY*>(base + dir.VirtualAddress);
+    auto* names    = reinterpret_cast<DWORD*>(base + exp->AddressOfNames);
+    auto* ordinals = reinterpret_cast<WORD*> (base + exp->AddressOfNameOrdinals);
+    auto* funcs    = reinterpret_cast<DWORD*>(base + exp->AddressOfFunctions);
+
+    for (DWORD i = 0; i < exp->NumberOfNames; i++) {
+        const char* n = reinterpret_cast<const char*>(base + names[i]);
+        if (std::strcmp(n, name) == 0) {
+            WORD  ord = ordinals[i];
+            DWORD rva = funcs[ord];
+            return base + rva;
+        }
+    }
+    return nullptr;
+}
+
 template <typename FnPtr>
 inline FnPtr get_proc(HMODULE h, const char* name)
 {
-    return reinterpret_cast<FnPtr>(GetProcAddress(h, name));
+    return reinterpret_cast<FnPtr>(resolve_export(h, name));
 }
 
 } // namespace osu::pe
