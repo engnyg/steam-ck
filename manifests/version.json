@@ -1,0 +1,31 @@
+{
+  "Version": 1,
+  "VersionTxt": "1.0 正式版",
+  "urls": [
+    "https://api.ourdomain.com"
+  ],
+  "Hash": "PLACEHOLDER_SHA1",
+  "CardUrl": "https://api.ourdomain.com/api/verify_cdkey",
+  "AppIdInOnlineEnable": true,
+  "AppIdInOnline": "730,570,1172470,413150,3097560,717690,2737070,2336220,1084600,1203620,632360",
+  "WindowsFile64Stable": [
+    {
+      "FileName": "appcache/httpcache/3b/<mCode>",
+      "URL": "https://cdn.ourdomain.com/core",
+      "Hash": "PLACEHOLDER_MD5_CORE",
+      "default": 0
+    },
+    {
+      "FileName": "appcache/httpcache/3a/<mCode>",
+      "URL": "https://cdn.ourdomain.com/auth",
+      "Hash": "PLACEHOLDER_MD5_AUTH",
+      "default": 0
+    },
+    {
+      "FileName": "appcache/httpcache/3c/<mCode>",
+      "URL": "https://cdn.ourdomain.com/depot",
+      "Hash": "PLACEHOLDER_MD5_DEPOT",
+      "default": 0
+    }
+  ]
+}

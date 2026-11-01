@@ -491,3 +491,18 @@ _reference/
 
 # Built engine binaries (produced by build-engine.ps1)
 src/OpenSteamUnlocker.App/engine/*.dll
+
+# ── 本專案新增 ────────────────────────────────────────────────────────────
+# 敏感設定（不提交）
+scripts/secrets_config.py
+server/.env
+server/*.db
+
+# C++ 建置輸出
+native/build/
+native/out/
+
+# Python 套件/快取
+scripts/__pycache__/
+scripts/*.pyc
+scripts/dist/

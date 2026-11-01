@@ -1,0 +1,15 @@
+; xinput1_4.def
+; 轉發所有 XInput 導出至系統真實的 xinput1_3.dll
+; 這樣注入 DLL 仍可讓控制器正常運作
+
+LIBRARY xinput1_4
+
+EXPORTS
+    XInputGetState           = xinput1_3.XInputGetState
+    XInputSetState           = xinput1_3.XInputSetState
+    XInputGetCapabilities    = xinput1_3.XInputGetCapabilities
+    XInputEnable             = xinput1_3.XInputEnable
+    XInputGetDSoundAudioDeviceGuids = xinput1_3.XInputGetDSoundAudioDeviceGuids
+    XInputGetBatteryInformation     = xinput1_3.XInputGetBatteryInformation
+    XInputGetKeystroke              = xinput1_3.XInputGetKeystroke
+    XInputGetAudioDeviceIds         = xinput1_3.XInputGetAudioDeviceIds
