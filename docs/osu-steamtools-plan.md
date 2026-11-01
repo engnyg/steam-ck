@@ -7,71 +7,124 @@
 
 ## 一、目標
 
-打造一套完全自主的 Steam 遊戲解鎖工具，純 DLL 架構，不需要任何管理 UI。功能：
+完整模仿 SteamTools 架構，打造自主可控的 Steam 遊戲解鎖工具。
 
-- **授權金鑰系統**（`LY-XXXXX-XXXXX-XXXXX-XXXXX`，手動發行，離線驗證）
-- **遊戲擁有權偽造**（`BIsSubscribedApp` hook）
-- **Depot Key 注入**（從我們的伺服器動態下載）
-- **Manifest 注入**（從我們的伺服器動態下載）
-- **核心模組每次啟動從伺服器下載解密**（永不落地）
-
----
-
-## 二、完整解鎖技術鏈
-
-| 需求 | 我們的替代 | 來源 |
-|------|-----------|------|
-| 擁有遊戲 | `BIsSubscribedApp` hook | OSU_Core（in-memory） |
-| 遊戲文件清單 | `.manifest` 注入 depotcache | 我們的伺服器 |
-| 解密遊戲文件 | `GetDepotDecryptionKey` hook | 我們的伺服器 |
+| SteamTools | 我們 |
+|------------|------|
+| `xinput1_4.dll` | `xinput1_4.dll`（自製） |
+| `Core.dll` | `OSU_Core.dll` |
+| `Authorization.dll` | `OSU_Auth.dll` |
+| `cardx.tnkjmec.com` CDK 驗證 | 我們的 API 伺服器 |
+| `update.wudrm.com/Core` | 我們的 CDN |
+| 版本 manifest（AES 加密） | 相同格式 |
+| `<mCode>` 機器碼快取 | 相同機制 |
+| `AppIdInOnline` 線上驗證 | 相同機制 |
 
 ---
 
-## 三、系統架構
+## 二、系統架構
 
 ```
-我們的伺服器 (ourdomain.com)
-  ├─ /Core           → AES-CBC 加密的 OSU_Core.dll
-  ├─ /depotkeys      → AES-CBC 加密的 depotkeys.json
-  └─ /manifests/{id} → AES-CBC 加密的 .manifest 文件
+我們的伺服器
+  ├─ /version             AES 加密版本 manifest（JSON）
+  ├─ /core                AES 加密 OSU_Core.dll
+  ├─ /auth                AES 加密 OSU_Auth.dll
+  ├─ /depotkeys           AES 加密 depotkeys.json
+  ├─ /api/verify_cdkey    LY 金鑰驗證 API
+  └─ /api/check_app       線上遊戲驗證 API
 
-使用者執行 irm ... | iex
-  ├─ 輸入 LY 金鑰
-  ├─ ps1 離線 HMAC 驗證
-  ├─ 寫入 HKCU\Software\OSU\LicenseKey
-  ├─ 寫入 %APPDATA%\OSU\applist.json（解鎖清單）
-  ├─ 複製 xinput1_4.dll 至 Steam 目錄  ← 唯一靜態部署的檔案
+我們（手動）
+  └─ keygen.py → 生成 LY-XXXXX-XXXXX-XXXXX-XXXXX → 寫入伺服器 DB → 送給使用者
+
+activate-cdk.ps1（irm ... | iex）
+  ├─ 部署 xinput1_4.dll 至 Steam 目錄（唯一靜態部署）
+  ├─ 寫入 HKCU\Software\OSU\CDKey = "LY-XXXXX-XXXXX-XXXXX-XXXXX"
+  ├─ 寫入 %APPDATA%\OSU\applist.json
   └─ 啟動 Steam
 
 Steam.exe 啟動
-  └─ xinput1_4.dll（DLL 劫持，靜態部署）
-       ├─ GET ourdomain.com/Core
-       ├─ AES-CBC 解密（金鑰硬編碼於 xinput1_4.dll）
-       ├─ 記憶體載入 PE（reflective load，永不落地）
-       └─ 呼叫 OSU_Core 初始化函式
-            ├─ 讀 LicenseKey → HMAC 驗證 → 失敗靜默退出
-            ├─ GET ourdomain.com/depotkeys → 解密 → 快取
-            ├─ 複製 manifests → depotcache/
-            ├─ Hook: BIsSubscribedApp       → applist 命中 → true
-            └─ Hook: GetDepotDecryptionKey  → depotkeys 命中 → hex key
+  └─ xinput1_4.dll（DLL 劫持）
+       ├─ 計算 <mCode>（機器碼雜湊）
+       ├─ GET /version → AES 解密 → 取得 manifest
+       ├─ 比對 manifest 中各檔案 hash：
+       │    hash 相同 → 從 appcache/httpcache/3b/<mCode> 載入
+       │    hash 不同 → 重新下載 → 存回 → 載入
+       ├─ 記憶體載入 OSU_Core.dll
+       └─ 記憶體載入 OSU_Auth.dll
+
+OSU_Auth.dll（授權驗證）
+  ├─ 讀 HKCU\Software\OSU\CDKey
+  ├─ POST /api/verify_cdkey { key, timestamp, sig }
+  │    有網路 → 伺服器驗證 → 快取結果至本地
+  │    無網路 → 讀本地快取（HMAC 離線驗證備援）
+  └─ 回傳 { valid, features[], online_apps[] }
+
+OSU_Core.dll（Steam 功能核心）
+  ├─ 從 OSU_Auth 取得授權資訊
+  ├─ 載入 depotkeys.json
+  ├─ 複製 manifests → depotcache/
+  ├─ Hook: BIsSubscribedApp(AppId)
+  │    AppIdInOnline 內的 AppId → POST /api/check_app 驗證
+  │    其餘 → 查 applist.json
+  └─ Hook: GetDepotDecryptionKey(DepotId) → 查 depotkeys
 ```
 
 ---
 
-## 四、元件清單
+## 三、元件清單
 
-| 元件 | 語言 | 部署方式 | 職責 |
+| 元件 | 語言 | 儲存位置 | 職責 |
 |------|------|----------|------|
-| `keygen.py` | Python | 只有我們持有 | 手動生成 LY 金鑰 |
-| `xinput1_4.dll` | C++ | 靜態部署至 Steam 目錄 | 劫持入口、下載解密載入 Core |
-| `OSU_Core.dll` | C++ | **記憶體載入，永不落地** | 授權驗證、hook、manifest 注入 |
-| 伺服器 `/Core` | — | 我們的 domain | AES 加密的 OSU_Core.dll |
-| 伺服器 `/depotkeys` | — | 我們的 domain | AES 加密的 depotkeys.json |
-| `activate-cdk.ps1` | PowerShell | `irm \| iex` | 驗證金鑰、部署 xinput1_4.dll、啟動 Steam |
+| `keygen.py` | Python | 只有我們持有 | 生成 LY 金鑰，寫入伺服器 DB |
+| `xinput1_4.dll` | C++ | Steam 目錄（靜態） | 版本檢查、下載更新、載入 Core+Auth |
+| `OSU_Auth.dll` | C++ | `appcache/httpcache/3a/<mCode>` | 線上/離線 LY 金鑰驗證 |
+| `OSU_Core.dll` | C++ | `appcache/httpcache/3b/<mCode>` | Steam hook、manifest 注入 |
+| API 伺服器 | Python/Node | VPS | 金鑰驗證、APP 線上驗證 |
+| `activate-cdk.ps1` | PowerShell | `irm \| iex` | 部署 xinput1_4.dll、寫設定 |
 
 ---
 
-## 五、授權金鑰系統
+## 四、版本 Manifest 格式（對齊 SteamTools）
+
+```json
+{
+  "Version": 1,
+  "VersionTxt": "1.0 正式版",
+  "urls": [
+    "https://api.ourdomain.com"
+  ],
+  "Hash": "<sha1_of_this_manifest>",
+  "CardUrl": "https://api.ourdomain.com/verify_cdkey",
+  "AppIdInOnlineEnable": true,
+  "AppIdInOnline": "730,570,1172470",
+  "WindowsFile64Stable": [
+    {
+      "FileName": "appcache/httpcache/3b/<mCode>",
+      "URL": "https://cdn.ourdomain.com/core",
+      "Hash": "<md5>",
+      "default": 0
+    },
+    {
+      "FileName": "appcache/httpcache/3a/<mCode>",
+      "URL": "https://cdn.ourdomain.com/auth",
+      "Hash": "<md5>",
+      "default": 0
+    },
+    {
+      "FileName": "appcache/httpcache/depot/<mCode>",
+      "URL": "https://cdn.ourdomain.com/depotkeys",
+      "Hash": "<md5>",
+      "default": 0
+    }
+  ]
+}
+```
+
+加密方式：`AES-256-CBC + zlib`（與 SteamTools 相同格式）
+
+---
+
+## 五、LY 金鑰系統
 
 ### 5-1 金鑰格式
 
@@ -80,155 +133,165 @@ LY-XXXXX-XXXXX-XXXXX-XXXXX  （20 碼，A-Z 0-9，4 組 5 碼）
    [12 碼 serial][8 碼 HMAC check]
 ```
 
-### 5-2 驗證演算法
+### 5-2 雙層驗證
 
+**線上驗證（主要）：**
 ```
-check = BASE36( HMAC-SHA256(SECRET, serial) )[0:8]
-```
-
-- `SECRET` 硬編碼於 ps1 + xinput1_4.dll（XOR 拆分混淆）
-- 離線可驗、無需資料庫、永久有效、無 HWID 綁定
-
-### 5-3 驗證流程
-
-```
-ps1 → 使用者輸入 LY 金鑰 → 離線 HMAC 驗證
-    → 通過 → 寫 HKCU\Software\OSU\LicenseKey
-    → 失敗 → 中止，顯示錯誤
-
-xinput1_4.dll 載入 OSU_Core（in-memory）
-OSU_Core → 讀 registry → HMAC 再次驗證
-         → 失敗 → 靜默 return（不 crash Steam）
+POST /api/verify_cdkey
+Body: { "key": "LY-...", "ts": 1234567890, "sig": HMAC(key+ts, secret) }
+回應: { "valid": true, "features": ["unlock", "depot"], "online_apps": [730, 570] }
 ```
 
----
-
-## 六、加密格式（沿用 SteamTools 規格）
-
+**離線備援（無網路時）：**
 ```
-[ IV 16 bytes ][ uint32_LE 解壓後長度 4 bytes ][ zlib 壓縮資料 ][ PKCS7 padding ]
-```
-
-- 演算法：AES-256-CBC + zlib + PKCS7
-- 加密金鑰：32 bytes，硬編碼於 xinput1_4.dll（XOR 混淆）
-- 伺服器端用 `scripts/encrypt_payload.py` 加密後上傳
-
----
-
-## 七、xinput1_4.dll 技術規劃
-
-### 7-1 xinput export 轉發
-
-```cpp
-// xinput1_4.def — 全部轉發至真實 DLL
-EXPORTS
-  XInputGetState          = real_xinput.XInputGetState
-  XInputSetState          = real_xinput.XInputSetState
-  XInputGetCapabilities   = real_xinput.XInputGetCapabilities
-  ...
+本地快取上次驗證結果（AES 加密存於 registry）
++ HMAC 離線二次確認（防竄改）
+快取有效期：7 天
 ```
 
-### 7-2 Core 下載與記憶體載入
+### 5-3 keygen.py 流程
 
 ```
-DllMain(DLL_PROCESS_ATTACH)
-  1. WinHTTP GET https://ourdomain.com/Core
-  2. AES-CBC 解密 → zlib 解壓 → PE bytes in memory
-  3. Manual PE mapping（reflective load）：
-     a. VirtualAlloc 分配空間
-     b. 複製 PE headers + sections
-     c. 修正 relocations
-     d. 解析並填充 IAT（imports）
-     e. 設定 section 記憶體保護
-     f. 呼叫 DllMain(DLL_PROCESS_ATTACH)
-  4. GetProcAddress("OSU_Init") → call
+python keygen.py [數量]
+  → 生成 LY-... 金鑰
+  → POST /api/admin/add_key { key, note }  （寫入伺服器 DB）
+  → 輸出金鑰清單
 ```
 
 ---
 
-## 八、OSU_Core.dll 功能規劃
+## 六、API 伺服器設計
 
-### 8-1 啟動流程（OSU_Init）
+### 端點
+
+| 端點 | 方法 | 用途 |
+|------|------|------|
+| `/api/verify_cdkey` | POST | LY 金鑰驗證 |
+| `/api/check_app` | POST | 線上遊戲驗證（AppIdInOnline） |
+| `/api/admin/add_key` | POST | 新增金鑰（管理員，需 admin token） |
+| `/api/admin/revoke_key` | POST | 撤銷金鑰 |
+
+### 資料庫結構（SQLite）
+
+```sql
+CREATE TABLE keys (
+    key         TEXT PRIMARY KEY,   -- LY-XXXXX-XXXXX-XXXXX-XXXXX
+    created_at  INTEGER,
+    note        TEXT,               -- 備註（送給誰）
+    revoked     INTEGER DEFAULT 0
+);
+
+CREATE TABLE verify_log (
+    key         TEXT,
+    timestamp   INTEGER,
+    ip          TEXT
+);
+```
+
+---
+
+## 七、`<mCode>` 機器碼
+
+用途：**隱藏快取檔名**（讓 Core.dll 不顯眼），不做 HWID 授權綁定。
 
 ```
-1. 讀 HKCU\Software\OSU\LicenseKey → HMAC 驗證
-2. WinHTTP GET ourdomain.com/depotkeys → AES 解密 → 快取至 %TEMP%\osu_dk
-3. 讀 %APPDATA%\OSU\applist.json
-4. 掃描 %APPDATA%\OSU\manifests\ → 複製至 depotcache/
-5. 掛載 MinHook
+mCode = SHA256( MachineGuid + ComputerName )[0:16]  → 32 hex 字元
 ```
 
-### 8-2 Hook 目標
+- `MachineGuid`：`HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`
+- 結果作為 httpcache 目錄下的檔名（`appcache/httpcache/3b/<mCode>`）
+
+---
+
+## 八、OSU_Core.dll Hook 規劃
 
 | Hook | 函式 | 行為 |
 |------|------|------|
-| H1 | `IClientUser::BIsSubscribedApp(AppId_t)` | applist.json 命中 → `true` |
-| H2 | `IClientUser::GetDepotDecryptionKey(DepotId_t, …)` | depotkeys 命中 → hex key |
+| H1 | `IClientUser::BIsSubscribedApp(AppId_t)` | AppIdInOnline → 打 API；其餘查 applist.json |
+| H2 | `IClientUser::GetDepotDecryptionKey(DepotId_t)` | 查 depotkeys.json → 回傳 hex key |
 
-vtable 偏移透過 pattern scan `steamclient64.dll` 取得，不用固定偏移。
+vtable 偏移：pattern scan `steamclient64.dll`，不用固定偏移。
 
 ---
 
-## 九、伺服器端工具（`scripts/`）
+## 九、加密格式（全系統統一）
 
-| 腳本 | 功能 |
+```
+[ IV 16 bytes ][ uint32_LE 解壓後長度 ][ zlib 壓縮資料 ][ PKCS7 padding ]
+```
+
+演算法：AES-256-CBC  
+各元件使用獨立金鑰（硬編碼於 xinput1_4.dll，XOR 混淆）：
+
+| 用途 | 金鑰 |
 |------|------|
-| `keygen.py` | 生成 LY 金鑰 |
-| `encrypt_payload.py` | AES-CBC-zlib 加密任意 payload |
-| `update_core.sh` | 加密 OSU_Core.dll 並上傳至伺服器 |
-| `update_depotkeys.sh` | 抓 ManifestHub → 加密 → 上傳 |
+| 版本 manifest | `KEY_VERSION` |
+| OSU_Core.dll | `KEY_CORE` |
+| OSU_Auth.dll | `KEY_AUTH` |
+| depotkeys.json | `KEY_DEPOT` |
 
 ---
 
 ## 十、實作階段
 
-### Phase 0 — 授權 + 伺服器工具（1-2 天）
+### Phase 0 — 伺服器 + 金鑰系統（2-3 天）
 
-- [ ] `scripts/keygen.py`：LY 金鑰生成
-- [ ] `scripts/encrypt_payload.py`：AES-CBC-zlib 加密工具
-- [ ] `activate-cdk.ps1` 加入 LY 金鑰輸入 + 離線驗證
-- [ ] 設定伺服器端點（domain + 上傳流程）
+- [ ] SQLite DB + `/api/verify_cdkey` + `/api/check_app`
+- [ ] `/api/admin/add_key` + `/api/admin/revoke_key`
+- [ ] `keygen.py`：生成 LY 金鑰 + 寫入伺服器 DB
+- [ ] `encrypt_payload.py`：AES-CBC-zlib 加密工具
+- [ ] 版本 manifest JSON 範本 + 加密上傳腳本
 
-### Phase 1 — xinput1_4.dll（2-3 天）
+### Phase 1 — xinput1_4.dll（3-4 天）
 
 - [ ] CMake + MinGW-w64 專案
 - [ ] xinput export 轉發（`.def`）
-- [ ] WinHTTP 下載 + AES-CBC 解密
-- [ ] Manual PE loader（reflective load）
-- [ ] 驗證：Steam 啟動不崩潰、Core 成功載入
+- [ ] `<mCode>` 計算（SHA256 機器碼）
+- [ ] WinHTTP GET /version → AES 解密 → 解析 manifest
+- [ ] Hash 比對 → 按需下載各元件
+- [ ] 儲存至 `appcache/httpcache/3[ab]/<mCode>`
+- [ ] 記憶體載入 OSU_Core.dll + OSU_Auth.dll
 
-### Phase 2 — OSU_Core.dll 授權 + Hook（3-4 天）
+### Phase 2 — OSU_Auth.dll（2-3 天）
 
-- [ ] `OSU_Init`：HMAC 驗證 + depotkeys 下載
+- [ ] 讀 registry CDKey
+- [ ] WinHTTP POST /api/verify_cdkey
+- [ ] 本地快取（AES 加密，7 天有效）
+- [ ] 離線 HMAC 備援驗證
+
+### Phase 3 — OSU_Core.dll（3-4 天）
+
 - [ ] MinHook + nlohmann/json
-- [ ] Pattern scan → Hook H1 `BIsSubscribedApp`
+- [ ] 載入 depotkeys.json
+- [ ] Pattern scan → Hook H1 `BIsSubscribedApp`（含線上驗證分支）
 - [ ] Pattern scan → Hook H2 `GetDepotDecryptionKey`
-- [ ] 驗證：圖書館顯示遊戲、depot key 正確注入
+- [ ] manifest 注入 depotcache
 
-### Phase 3 — Manifest 注入（2-3 天）
+### Phase 4 — activate-cdk.ps1 整合（1 天）
 
-- [ ] 啟動時複製 manifests → depotcache
-- [ ] `update_depotkeys.sh`：ManifestHub → 加密 → 上傳
-- [ ] 驗證：遊戲可下載、可啟動
+- [ ] 部署 xinput1_4.dll
+- [ ] 寫 CDKey 至 registry
+- [ ] 寫 applist.json
+- [ ] 啟動 Steam
 
-### Phase 4 — 打包部署（1 天）
+### Phase 5 — CI / 打包（1-2 天）
 
-- [ ] GitHub Actions：build xinput1_4.dll → 加密 → 上傳伺服器
-- [ ] `activate-cdk.ps1` 只部署 xinput1_4.dll（Core 由 DLL 自行拉取）
+- [ ] GitHub Actions：MinGW build → 加密 → 上傳伺服器
+- [ ] 版本 manifest 自動更新 hash
 
 ---
 
 ## 十一、技術選型
 
-| 面向 | 選擇 | 理由 |
-|------|------|-------|
-| 網路請求 | WinHTTP | Windows 內建，無額外依賴 |
-| 記憶體載入 | Manual PE mapping | Core 永不落地，難以提取 |
-| 加密格式 | AES-256-CBC + zlib | 與 SteamTools 相同，已有解密工具 |
-| Hook 框架 | MinHook | MIT，成熟穩定 |
-| JSON | nlohmann/json | header-only |
-| 金鑰驗證 | HMAC-SHA256 | 離線可驗、無需 DB |
-| Cross-compile | MinGW-w64 | Linux CI 可 build |
+| 面向 | 選擇 |
+|------|------|
+| API 伺服器 | Python Flask + SQLite |
+| Native DLL | C++ 17 + MinGW-w64 |
+| Hook 框架 | MinHook |
+| JSON | nlohmann/json |
+| 網路 | WinHTTP |
+| 加密 | AES-256-CBC + zlib（全系統統一） |
+| 機器碼 | SHA256(MachineGuid + ComputerName) |
 
 ---
 
@@ -236,20 +299,21 @@ vtable 偏移透過 pattern scan `steamclient64.dll` 取得，不用固定偏移
 
 | 風險 | 嚴重度 | 對策 |
 |------|--------|------|
-| 伺服器下線 → Core 無法載入 | 高 | 快取上次成功的加密 Core 於本地 |
-| 記憶體載入被 AV 誤報 | 高 | Defender 排除；xinput1_4.dll 代碼簽章（長期） |
-| AES 金鑰從 xinput1_4.dll 提取 | 中 | XOR 拆分混淆；Core 每版更換金鑰 |
-| Steam 更新改變 vtable 偏移 | 高 | Pattern scan；Core 可獨立更新 |
-| VAC 偵測 hook | 高 | 非 VAC 遊戲才掛 hook |
+| 伺服器下線 | 高 | 離線快取 7 天備援 |
+| AES 金鑰被提取 | 中 | XOR 混淆；各元件獨立金鑰 |
+| Steam vtable 偏移變動 | 高 | Pattern scan |
+| VAC 偵測 | 高 | 非 VAC 遊戲才掛 hook |
+| AV 誤報 | 高 | Defender 排除；長期代碼簽章 |
 
 ---
 
 ## 十三、里程碑
 
 ```
-Day 1-2   [Phase 0]    keygen + encrypt 工具 + ps1 驗證
-Day 3-5   [Phase 1]    xinput1_4.dll（下載 + 記憶體載入）
-Day 6-9   [Phase 2]    OSU_Core.dll hook × 2
-Week 2    [Phase 3]    Manifest + depotkeys 伺服器整合
-Week 3    [Phase 4]    CI 自動 build + 上傳
+Day 1-3   [Phase 0]  API 伺服器 + keygen + 加密工具
+Day 4-7   [Phase 1]  xinput1_4.dll（版本更新 + 載入）
+Day 8-10  [Phase 2]  OSU_Auth.dll（線上/離線驗證）
+Day 11-14 [Phase 3]  OSU_Core.dll（hook + manifest）
+Day 15    [Phase 4]  ps1 整合
+Day 16-17 [Phase 5]  CI 打包
 ```
