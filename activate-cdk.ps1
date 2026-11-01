@@ -8,7 +8,8 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-Add-Type @"
+if (-not ([System.Management.Automation.PSTypeName]'Win32').Type) {
+    Add-Type @"
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
@@ -20,6 +21,7 @@ public class Win32 {
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr p);
 }
 "@
+}
 
 # ─── GUI 輸入視窗 ────────────────────────────────────────────────────────────
 $form                 = New-Object System.Windows.Forms.Form
