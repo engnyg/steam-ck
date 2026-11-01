@@ -1,9 +1,9 @@
 # Steam CDK 序號兌換
 # 使用方式:
 #   irm steamfn.com | iex
-#   .\activate-cdk.ps1
 
-[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ProgressPreference = 'SilentlyContinue'
 
 # ─── 管理員自動提權 ───────────────────────────────────────────────────────────
@@ -14,8 +14,7 @@ if (-not $isAdmin) {
     try {
         $scriptText = $MyInvocation.MyCommand.Definition
         if ([string]::IsNullOrWhiteSpace($scriptText)) {
-            # irm | iex 模式：把整個腳本 encode 後以系統管理員重新跑
-            $scriptText = (irm steamfn.com)   # 重新抓一次
+            $scriptText = (irm steamfn.com -UseBasicParsing)
         }
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($scriptText))
         Start-Process powershell -Verb RunAs `
@@ -27,12 +26,8 @@ if (-not $isAdmin) {
     exit
 }
 
-# ─── Banner ───────────────────────────────────────────────────────────────────
 cls
-Write-Host ""
-Write-Host "  Steam CDK 序號兌換工具" -ForegroundColor Cyan
-Write-Host "  ─────────────────────────────────────" -ForegroundColor DarkGray
-Write-Host ""
+Write-Host "正在網路初始化中..." -ForegroundColor Cyan
 
 # ─── 輔助函式 ─────────────────────────────────────────────────────────────────
 function Remove-IfExists($path) {
@@ -43,7 +38,7 @@ function ForceStop-Steam {
     Get-Process "steam" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
     if (Get-Process "steam" -ErrorAction SilentlyContinue) {
-        Start-Process cmd -ArgumentList "/c taskkill /f /im steam.exe" -WindowStyle Hidden
+        Start-Process cmd -ArgumentList "/c taskkill /f /im steam.exe" -WindowStyle Hidden -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
     }
 }
@@ -51,14 +46,28 @@ function ForceStop-Steam {
 function Get-FileRobust($url, $dest) {
     Remove-IfExists $dest
 
-    # 方法 1: HttpWebRequest（最快）
+    # 方法 1: HttpWebRequest
     try {
-        $req = [System.Net.HttpWebRequest]::Create($url)
-        $req.UserAgent = "Mozilla/5.0"
-        $req.AllowAutoRedirect = $true; $req.Timeout = 30000
+        [Net.ServicePointManager]::SecurityProtocol = `
+            [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+        try { [Net.ServicePointManager]::SecurityProtocol =
+            [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls13 } catch {}
+        [Net.ServicePointManager]::Expect100Continue    = $false
+        [Net.ServicePointManager]::DefaultConnectionLimit = 512
+        [Net.ServicePointManager]::UseNagleAlgorithm    = $false
+
+        $req = [Net.HttpWebRequest]::Create($url)
+        $req.UserAgent         = "Mozilla/5.0"
+        $req.AllowAutoRedirect = $true
+        $req.Timeout           = 30000
+        $req.ReadWriteTimeout  = 120000
+        $req.KeepAlive         = $true
+        try { $req.AutomaticDecompression =
+            [Net.DecompressionMethods]::GZip -bor [Net.DecompressionMethods]::Deflate } catch {}
+
         $resp = $req.GetResponse()
         $rs   = $resp.GetResponseStream()
-        $fs   = [System.IO.FileStream]::new($dest, 'Create', 'Write', 'None', 4MB)
+        $fs   = New-Object IO.FileStream($dest, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None, 4MB)
         $buf  = New-Object byte[] 4MB
         while (($n = $rs.Read($buf, 0, $buf.Length)) -gt 0) { $fs.Write($buf, 0, $n) }
         $fs.Flush(); $fs.Close(); $rs.Close(); $resp.Close()
@@ -67,13 +76,15 @@ function Get-FileRobust($url, $dest) {
 
     # 方法 2: BITS
     try {
-        Start-BitsTransfer -Source $url -Destination $dest -Priority Foreground -ErrorAction Stop
-        if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 0) { return $true }
+        if (Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue) {
+            Start-BitsTransfer -Source $url -Destination $dest -Priority Foreground -ErrorAction Stop
+            if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 0) { return $true }
+        }
     } catch {}
 
     # 方法 3: WebClient
     try {
-        $wc = New-Object System.Net.WebClient
+        $wc = New-Object Net.WebClient
         $wc.Headers.Add("User-Agent", "Mozilla/5.0")
         $wc.DownloadFile($url, $dest)
         $wc.Dispose()
@@ -83,133 +94,104 @@ function Get-FileRobust($url, $dest) {
     return $false
 }
 
-function Expand-ZipTo($zip, $dest) {
+function Expand-ZipTo($zipPath, $dest) {
     if (-not (Test-Path $dest)) { New-Item $dest -ItemType Directory -Force | Out-Null }
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
-        $z = [IO.Compression.ZipFile]::OpenRead($zip)
-        foreach ($e in $z.Entries) {
-            $target = Join-Path $dest $e.FullName
-            if ([string]::IsNullOrEmpty($e.Name)) {
-                if (-not (Test-Path $target)) { New-Item $target -ItemType Directory -Force | Out-Null }
-                continue
+        $z = [IO.Compression.ZipFile]::OpenRead($zipPath)
+        try {
+            foreach ($e in $z.Entries) {
+                $target = Join-Path $dest $e.FullName
+                if ([string]::IsNullOrEmpty($e.Name)) {
+                    if (-not (Test-Path $target)) { New-Item $target -ItemType Directory -Force | Out-Null }
+                    continue
+                }
+                $dir = Split-Path $target -Parent
+                if (-not (Test-Path $dir)) { New-Item $dir -ItemType Directory -Force | Out-Null }
+                try { [IO.Compression.ZipFileExtensions]::ExtractToFile($e, $target, $true) } catch {}
             }
-            $dir = Split-Path $target -Parent
-            if (-not (Test-Path $dir)) { New-Item $dir -ItemType Directory -Force | Out-Null }
-            try { [IO.Compression.ZipFileExtensions]::ExtractToFile($e, $target, $true) } catch {}
-        }
-        $z.Dispose(); return $true
+            return $true
+        } finally { $z.Dispose() }
     } catch {}
-    try { Expand-Archive -Path $zip -DestinationPath $dest -Force -ErrorAction Stop; return $true } catch {}
+    try { Expand-Archive -Path $zipPath -DestinationPath $dest -Force -ErrorAction Stop; return $true } catch {}
     return $false
 }
 
 # ─── Steam 路徑 ───────────────────────────────────────────────────────────────
-$steamRegPath = 'HKCU:\Software\Valve\Steam'
-$steamPath    = ""
+$steamRegPath      = 'HKCU:\Software\Valve\Steam'
+$steamToolsRegPath = 'HKCU:\Software\Valve\Steamtools'
+$steamPath         = ""
 
 if (Test-Path $steamRegPath) {
     $p = Get-ItemProperty $steamRegPath -ErrorAction SilentlyContinue
     if ($p -and $p.PSObject.Properties['SteamPath']) { $steamPath = $p.SteamPath }
 }
 
-if ([string]::IsNullOrWhiteSpace($steamPath) -or -not (Test-Path $steamPath)) {
-    Write-Host "[ERROR] 找不到 Steam 安裝路徑，請先安裝 Steam。" -ForegroundColor Red
-    Start-Sleep 8; exit
+if ([string]::IsNullOrWhiteSpace($steamPath) -or -not (Test-Path $steamPath -PathType Container)) {
+    Write-Host "您的電腦沒有安裝官方正版 Steam 客戶端，請安裝後再次嘗試。" -ForegroundColor Red
+    Start-Sleep 10; exit
 }
-Write-Host "[OK]   Steam：$steamPath" -ForegroundColor Green
 
 # ─── 關閉 Steam ───────────────────────────────────────────────────────────────
-Write-Host "[INFO] 正在關閉 Steam..." -ForegroundColor Cyan
 ForceStop-Steam
 
-# ─── 下載並部署引擎 DLL ───────────────────────────────────────────────────────
-$dllNames = @("OpenSteamTool.dll", "dwmapi.dll", "xinput1_4.dll")
-$needDeploy = $dllNames | Where-Object { -not (Test-Path (Join-Path $steamPath $_)) }
+# ─── 清理衝突 DLL ─────────────────────────────────────────────────────────────
+Remove-IfExists (Join-Path $steamPath "user32.dll")
+Remove-IfExists (Join-Path $steamPath "hid.dll")
+Remove-IfExists (Join-Path $steamPath "steam.cfg")
+Remove-IfExists (Join-Path $steamPath "package\beta")
+Remove-IfExists (Join-Path $steamPath "version.dll")
+Remove-IfExists (Join-Path $steamPath "versions.dll")
+Remove-IfExists (Join-Path $steamPath "dwmapi.dll")
+Remove-IfExists (Join-Path $steamPath "bin\dwmapi.dll")
 
-if ($needDeploy) {
-    Write-Host "[INFO] 正在下載引擎元件..." -ForegroundColor Cyan
+# ─── 下載並部署 SteamTools xinput1_4.dll ─────────────────────────────────────
+$resUrl  = "https://steamusercontent-a.akamaihd.net/ugc/12496635105303643204/C80CF1B9FF31D32512FD51F2B664F6E0607FA6F8/"
+$zipPath = Join-Path $env:TEMP "res.zip"
 
-    # 從 GitHub Releases 抓最新 ZIP
-    try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $meta    = Invoke-RestMethod "https://api.github.com/repos/OpenSteam001/OpenSteamTool/releases/latest" `
-                       -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
-        $zipUrl  = ($meta.assets | Where-Object { $_.name -match 'Release.*\.zip$' } | Select-Object -First 1).browser_download_url
-    } catch { $zipUrl = $null }
-
-    if (-not $zipUrl) {
-        Write-Host "[ERROR] 無法取得下載連結，請檢查網路後重試。" -ForegroundColor Red
-        Start-Sleep 8; exit
-    }
-
-    $zipPath = Join-Path $env:TEMP "ost_release.zip"
-    $ok = Get-FileRobust $zipUrl $zipPath
-    if (-not $ok) {
-        Write-Host "[ERROR] 下載失敗，請重試。" -ForegroundColor Red
-        Start-Sleep 8; exit
-    }
-
-    $tmpDir = Join-Path $env:TEMP "ost_extract"
-    Remove-IfExists $tmpDir
-    Expand-ZipTo $zipPath $tmpDir | Out-Null
+$ok = Get-FileRobust $resUrl $zipPath
+if (-not $ok -or -not (Test-Path $zipPath) -or (Get-Item $zipPath).Length -eq 0) {
     Remove-IfExists $zipPath
-
-    foreach ($dll in $dllNames) {
-        $src = Get-ChildItem $tmpDir -Recurse -Filter $dll -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($src) {
-            Copy-Item $src.FullName (Join-Path $steamPath $dll) -Force
-            Write-Host "[OK]   $dll → Steam/" -ForegroundColor Green
-        } else {
-            Write-Host "[WARN] 找不到 $dll" -ForegroundColor Yellow
-        }
-    }
-    Remove-IfExists $tmpDir
-} else {
-    Write-Host "[OK]   引擎 DLL 已就緒" -ForegroundColor Green
+    Write-Host "[網路獲取文件失敗，請檢查網路後重試]" -ForegroundColor Red
+    Start-Sleep 10; exit
 }
 
-# ─── 寫入 opensteamtool.toml（啟用 CDK 模式）────────────────────────────────
-$tomlPath = Join-Path $steamPath "opensteamtool.toml"
-$toml = @"
-[log]
-level = "info"
+$ok = Expand-ZipTo $zipPath $steamPath
+Remove-IfExists $zipPath
+if (-not $ok) {
+    Write-Host "[資源解壓失敗，請重試]" -ForegroundColor Red
+    Start-Sleep 10; exit
+}
 
-[manifest]
-url = "opensteamtool"
-
-[lua]
-
-[inject]
-enabled = true
-
-[cdkey]
-enabled = true
-"@
-Set-Content $tomlPath $toml -Encoding UTF8 -Force
-Write-Host "[OK]   CDK 模式已設定" -ForegroundColor Green
+# ─── 設定 Registry（CDK 模式）────────────────────────────────────────────────
+if (-not (Test-Path $steamToolsRegPath)) {
+    New-Item -Path $steamToolsRegPath -Force | Out-Null
+}
+Remove-ItemProperty -Path $steamToolsRegPath -Name "ActivateUnlockMode" -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path $steamToolsRegPath -Name "AlwaysStayUnlocked"  -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path $steamToolsRegPath -Name "notUnlockDepot"       -ErrorAction SilentlyContinue
+Set-ItemProperty    -Path $steamToolsRegPath -Name "iscdkey" -Value "true" -Type String
 
 # ─── 啟動 Steam ───────────────────────────────────────────────────────────────
-Write-Host "[INFO] 正在啟動 Steam..." -ForegroundColor Cyan
 $steamExe = Join-Path $steamPath "steam.exe"
 $launched = $false
-try { Start-Process explorer.exe "`"$steamExe`""; $launched = $true } catch {}
-if (-not $launched) { try { Start-Process $steamExe; $launched = $true } catch {} }
+try { Start-Process explorer.exe -ArgumentList "`"$steamExe`"" -ErrorAction Stop; $launched = $true } catch {}
+if (-not $launched) { try { Start-Process $steamExe -ErrorAction Stop; $launched = $true } catch {} }
 if (-not $launched) { Start-Process "steam://" }
 
-Write-Host ""
-Write-Host "[DONE] Steam 已啟動，請在 Steam 中進行序號兌換。" -ForegroundColor Green
-Write-Host ""
+Write-Host "[已成功連接正版啟動服務，請登入 Steam 來啟動序號]" -ForegroundColor Green
 
+# ─── 倒數關閉 ────────────────────────────────────────────────────────────────
 for ($i = 5; $i -ge 1; $i--) {
-    Write-Host "`r  視窗將在 $i 秒後關閉..." -NoNewline
+    Write-Host "`r[本視窗將在 $i 秒後關閉...]" -NoNewline
     Start-Sleep 1
 }
 
-# 關閉本視窗
 $proc = Get-CimInstance Win32_Process -Filter "ProcessId = '$PID'" -ErrorAction SilentlyContinue
-$parent = if ($proc) { Get-CimInstance Win32_Process -Filter "ProcessId = '$($proc.ParentProcessId)'" -ErrorAction SilentlyContinue } else { $null }
-if ($parent -and $parent.ProcessName -match 'powershell|WindowsTerminal|cmd') {
-    Stop-Process -Id $parent.ProcessId -Force -ErrorAction SilentlyContinue
+if ($proc) {
+    $parent = Get-CimInstance Win32_Process -Filter "ProcessId = '$($proc.ParentProcessId)'" -ErrorAction SilentlyContinue
+    if ($parent -and $parent.ProcessName -match 'powershell|WindowsTerminal|cmd') {
+        Stop-Process -Id $parent.ProcessId -Force -ErrorAction SilentlyContinue
+    }
 }
 exit
