@@ -135,9 +135,18 @@ bool core_is_unlocked_app(int appid)
 
 void core_update_unlocked_apps(const int* ids, int count)
 {
-    // CDK 輸入成功後熱更新解鎖清單，無需重啟 Steam
     if (ids && count > 0)
         g_unlocked_app_ids.assign(ids, ids + count);
+}
+
+int core_get_unlocked_apps(int* out, int max_count)
+{
+    int n = static_cast<int>(g_unlocked_app_ids.size());
+    if (out) {
+        for (int i = 0; i < n && i < max_count; i++)
+            out[i] = g_unlocked_app_ids[i];
+    }
+    return n;
 }
 
 bool core_is_online_app(int appid)

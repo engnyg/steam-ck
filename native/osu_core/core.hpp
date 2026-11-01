@@ -13,7 +13,8 @@ extern "C" __declspec(dllexport) void core_init();
 const uint8_t*      core_get_depot_key(uint32_t depot_id, size_t* out_len);
 bool                core_is_unlocked_app(int appid);
 bool                core_is_online_app(int appid);
-void                core_update_unlocked_apps(const int* ids, int count); // CDK 啟動後熱更新
+void                core_update_unlocked_apps(const int* ids, int count);
+int                 core_get_unlocked_apps(int* out, int max_count);
 const osu_auth_api* core_get_auth();
 
 // hooks.cpp

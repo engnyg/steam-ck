@@ -4,34 +4,36 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
+#include <algorithm>
 
 // ── Steam EResult ─────────────────────────────────────────────────────────
 enum EResult : int {
-    k_EResultOK                    = 1,
-    k_EResultFail                  = 2,
-    k_EResultInvalidParam          = 8,
-    k_EResultProductNotFound       = 65,
+    k_EResultOK                      = 1,
+    k_EResultFail                    = 2,
+    k_EResultInvalidParam            = 8,
+    k_EResultProductNotFound         = 65,
     k_EResultDuplicateActivationCode = 113,
 };
 
 // ── Steam 介面 vtable 索引（x64 IClientUser） ─────────────────────────────
-// 透過 IDA / 模式掃描確認後填入實際值
-constexpr int VT_BIsSubscribedApp        = 163;
-constexpr int VT_GetDepotDecryptionKey   = 243;
-// ActivateGameWithKey：用戶在 Steam 「啟動產品」對話框按下確認時呼叫
-// TODO: 對目標版本 steamclient64.dll 確認實際索引
-constexpr int VT_ActivateGameWithKey     = 194;
+// TODO: 對目標版本 steamclient64.dll 以 IDA/模式掃描確認實際索引
+constexpr int VT_BIsSubscribedApp      = 163;
+constexpr int VT_GetSubscribedApps     = 167;  // 讓遊戲出現在遊戲庫
+constexpr int VT_GetDepotDecryptionKey = 243;
+constexpr int VT_ActivateGameWithKey   = 194;
 
 // ── 原始函式指標 ──────────────────────────────────────────────────────────
-using BIsSubscribedApp_t      = bool   (__thiscall*)(void*, uint32_t);
-using GetDepotDecryptionKey_t = bool   (__thiscall*)(void*, uint32_t, void*, uint32_t*);
-using ActivateGameWithKey_t   = EResult(__thiscall*)(void*, const char*);
+using BIsSubscribedApp_t      = bool    (__thiscall*)(void*, uint32_t);
+using GetSubscribedApps_t     = uint32_t(__thiscall*)(void*, uint32_t*, uint32_t, bool);
+using GetDepotDecryptionKey_t = bool    (__thiscall*)(void*, uint32_t, void*, uint32_t*);
+using ActivateGameWithKey_t   = EResult (__thiscall*)(void*, const char*);
 
 static BIsSubscribedApp_t      orig_BIsSubscribedApp      = nullptr;
+static GetSubscribedApps_t     orig_GetSubscribedApps     = nullptr;
 static GetDepotDecryptionKey_t orig_GetDepotDecryptionKey = nullptr;
 static ActivateGameWithKey_t   orig_ActivateGameWithKey   = nullptr;
 
-// ── Hook 實作 ─────────────────────────────────────────────────────────────
+// ── Hook：BIsSubscribedApp ────────────────────────────────────────────────
 
 static bool __fastcall hook_BIsSubscribedApp(void* this_, uint32_t appid)
 {
@@ -39,17 +41,51 @@ static bool __fastcall hook_BIsSubscribedApp(void* this_, uint32_t appid)
     if (!auth || !auth->check_cached_key || !auth->check_cached_key())
         return orig_BIsSubscribedApp(this_, appid);
 
-    // 只對此金鑰解鎖的 AppID 回傳 true（精確到遊戲/DLC）
     if (!core_is_unlocked_app(static_cast<int>(appid)))
         return orig_BIsSubscribedApp(this_, appid);
 
-    // AppIdInOnline 的遊戲每次需線上驗證
     if (core_is_online_app(static_cast<int>(appid))) {
         if (!auth->check_app_online || !auth->check_app_online(static_cast<int>(appid)))
             return orig_BIsSubscribedApp(this_, appid);
     }
     return true;
 }
+
+// ── Hook：GetSubscribedApps ───────────────────────────────────────────────
+// Steam 建立遊戲庫時呼叫此函式取得 AppID 清單
+// 我們把解鎖的 AppID 注入到回傳清單，讓遊戲直接出現在遊戲庫
+
+static uint32_t __fastcall hook_GetSubscribedApps(
+    void* this_, uint32_t* pvecAppIDs, uint32_t unMaxAppIDs, bool bIncludePlayedFreeGames)
+{
+    // 先取得用戶真實擁有的遊戲
+    uint32_t real_count = 0;
+    if (orig_GetSubscribedApps)
+        real_count = orig_GetSubscribedApps(this_, pvecAppIDs, unMaxAppIDs, bIncludePlayedFreeGames);
+
+    auto* auth = core_get_auth();
+    if (!auth || !auth->check_cached_key || !auth->check_cached_key())
+        return real_count;
+
+    // 取得解鎖的 AppID 清單
+    int  unlocked[512] = {};
+    int  ucount        = core_get_unlocked_apps(unlocked, 512);
+    if (ucount <= 0) return real_count;
+
+    // 注入（避免重複）
+    uint32_t total = real_count;
+    for (int i = 0; i < ucount && total < unMaxAppIDs; i++) {
+        uint32_t id = static_cast<uint32_t>(unlocked[i]);
+        bool already = false;
+        for (uint32_t j = 0; j < real_count; j++) {
+            if (pvecAppIDs[j] == id) { already = true; break; }
+        }
+        if (!already) pvecAppIDs[total++] = id;
+    }
+    return total;
+}
+
+// ── Hook：GetDepotDecryptionKey ───────────────────────────────────────────
 
 static bool __fastcall hook_GetDepotDecryptionKey(
     void* this_, uint32_t depot_id, void* key_buf, uint32_t* key_len)
@@ -66,45 +102,35 @@ static bool __fastcall hook_GetDepotDecryptionKey(
     return false;
 }
 
-// ── CDK Hook：攔截 Steam「啟動產品」對話框 ───────────────────────────────
-// 流程：用戶在 Steam → 遊戲 → 在 Steam 上啟動產品 → 輸入 LY-XXXXX... → 確認
-// Steam 呼叫 IClientUser::ActivateGameWithKey(key)，我們在這裡攔截
+// ── Hook：ActivateGameWithKey（Steam「啟動產品」對話框） ─────────────────
 
 static EResult __fastcall hook_ActivateGameWithKey(void* this_, const char* key)
 {
     if (!key) {
-        if (orig_ActivateGameWithKey)
-            return orig_ActivateGameWithKey(this_, key);
+        if (orig_ActivateGameWithKey) return orig_ActivateGameWithKey(this_, key);
         return k_EResultInvalidParam;
     }
 
-    // 判斷是否為 LY 格式（LY- 開頭，長度 22）
     bool is_ly = (strncmp(key, "LY-", 3) == 0 || strncmp(key, "ly-", 3) == 0)
                  && strlen(key) == 22;
 
     if (is_ly) {
         auto* auth = core_get_auth();
-        if (!auth || !auth->verify_key) {
-            return k_EResultFail;
-        }
+        if (!auth || !auth->verify_key) return k_EResultFail;
 
-        // 驗證金鑰，取得解鎖的 AppID 清單
         int  appids[512] = {};
         int  count       = 512;
         bool ok = auth->verify_key(key, appids, &count);
 
         if (ok && count > 0) {
-            // 通知 Core 更新解鎖清單（熱更新，不需重啟 Steam）
+            // 熱更新解鎖清單，GetSubscribedApps hook 下次被呼叫時自動反映
             core_update_unlocked_apps(appids, count);
-            // Steam 顯示「已成功啟動」
             return k_EResultOK;
         }
         return k_EResultProductNotFound;
     }
 
-    // 不是 LY 金鑰，轉發給 Steam 原始處理（正版序號）
-    if (orig_ActivateGameWithKey)
-        return orig_ActivateGameWithKey(this_, key);
+    if (orig_ActivateGameWithKey) return orig_ActivateGameWithKey(this_, key);
     return k_EResultFail;
 }
 
@@ -116,7 +142,7 @@ static void** find_iclientuser_vtable()
     if (!hSteam) hSteam = GetModuleHandleA("steamclient.dll");
     if (!hSteam) return nullptr;
 
-    // TODO: 填入實際 byte pattern
+    // TODO: 填入實際 byte pattern（對目標版本 steamclient64.dll IDA 確認）
     return nullptr;
 }
 
@@ -142,11 +168,15 @@ void hooks_install()
                 reinterpret_cast<void*>(hook_BIsSubscribedApp),
                 reinterpret_cast<void**>(&orig_BIsSubscribedApp));
 
+    // 遊戲庫注入：讓解鎖的遊戲直接出現在 Steam 遊戲庫
+    vtable_hook(vtable, VT_GetSubscribedApps,
+                reinterpret_cast<void*>(hook_GetSubscribedApps),
+                reinterpret_cast<void**>(&orig_GetSubscribedApps));
+
     vtable_hook(vtable, VT_GetDepotDecryptionKey,
                 reinterpret_cast<void*>(hook_GetDepotDecryptionKey),
                 reinterpret_cast<void**>(&orig_GetDepotDecryptionKey));
 
-    // CDK hook：攔截 Steam 啟動產品對話框
     vtable_hook(vtable, VT_ActivateGameWithKey,
                 reinterpret_cast<void*>(hook_ActivateGameWithKey),
                 reinterpret_cast<void**>(&orig_ActivateGameWithKey));
@@ -160,11 +190,12 @@ void hooks_uninstall()
     if (orig_BIsSubscribedApp)
         vtable_hook(vtable, VT_BIsSubscribedApp,
                     reinterpret_cast<void*>(orig_BIsSubscribedApp), nullptr);
-
+    if (orig_GetSubscribedApps)
+        vtable_hook(vtable, VT_GetSubscribedApps,
+                    reinterpret_cast<void*>(orig_GetSubscribedApps), nullptr);
     if (orig_GetDepotDecryptionKey)
         vtable_hook(vtable, VT_GetDepotDecryptionKey,
                     reinterpret_cast<void*>(orig_GetDepotDecryptionKey), nullptr);
-
     if (orig_ActivateGameWithKey)
         vtable_hook(vtable, VT_ActivateGameWithKey,
                     reinterpret_cast<void*>(orig_ActivateGameWithKey), nullptr);
