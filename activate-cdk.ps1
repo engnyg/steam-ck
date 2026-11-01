@@ -1,6 +1,8 @@
-# Steam CDK 序號兌換
-# 使用方式:
-#   irm steamfn.com | iex
+# steam-ck 部署腳本
+# 用法：irm https://cdn.ourdomain.com/activate | iex
+#
+# 此腳本只負責部署 xinput1_4.dll。
+# CDK 輸入請在 Steam 完成：Steam → 遊戲 → 在 Steam 上啟動產品 → 輸入 LY-XXXXX-XXXXX-XXXXX-XXXXX
 
 [Console]::InputEncoding  = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
