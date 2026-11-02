@@ -1,0 +1,418 @@
+<title>steam-ck Admin</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --bg:#0f1117; --surface:#1a1d27; --border:#2a2d3a; --fg:#e8eaf0;
+  --muted:#7a7f99; --accent:#5b8df6; --accent-s:#3d6fe0;
+  --ok:#3dd68c; --warn:#f0a842; --err:#f06070; --radius:8px;
+  color-scheme:dark;
+}
+@media(prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    --bg:#f4f5f8;--surface:#fff;--border:#dde0ea;--fg:#181a24;
+    --muted:#6b6f87;--accent:#3d6fe0;--accent-s:#2a56c8;color-scheme:light;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#f4f5f8;--surface:#fff;--border:#dde0ea;--fg:#181a24;
+  --muted:#6b6f87;--accent:#3d6fe0;--accent-s:#2a56c8;color-scheme:light;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0}
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.5;
+  min-height:100%;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:24px;
+}
+
+.container{max-width:1100px;margin:0 auto}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;flex-wrap:wrap;gap:12px}
+.header h1{font-size:20px;font-weight:600;letter-spacing:-.3px;display:flex;align-items:center;gap:8px}
+.header h1 span{color:var(--accent)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:28px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column;gap:4px}
+.stat-val{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
+.stat-lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.stat.ok  .stat-val{color:var(--ok)}
+.stat.err .stat-val{color:var(--err)}
+
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:20px}
+.card-title{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:16px}
+
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:580px){.form-row{grid-template-columns:1fr}}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:12px;font-weight:500;color:var(--muted)}
+input,select,textarea{
+  background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  color:var(--fg);font-family:inherit;font-size:13px;padding:8px 10px;
+  width:100%;outline:none;transition:border-color .15s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+input[readonly]{color:var(--muted);cursor:default}
+.form-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+
+button{
+  border:none;border-radius:6px;cursor:pointer;font-family:inherit;
+  font-size:13px;font-weight:500;padding:8px 14px;transition:background .15s,opacity .15s;
+}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-s)}
+.btn-secondary{background:var(--border);color:var(--fg)}
+.btn-secondary:hover{background:var(--muted);color:var(--bg)}
+.btn-danger{background:transparent;color:var(--err);border:1px solid var(--err);padding:5px 10px;font-size:12px}
+.btn-danger:hover{background:var(--err);color:#fff}
+.btn-sm{padding:4px 10px;font-size:12px}
+button:disabled{opacity:.4;cursor:not-allowed}
+
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:600px}
+th{text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 12px 10px}
+td{padding:10px 12px;border-top:1px solid var(--border);font-size:13px;vertical-align:middle}
+tr:hover td{background:rgba(255,255,255,.02)}
+.mono{font-family:'JetBrains Mono',monospace;font-size:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
+.badge.active {background:rgba(61,214,140,.15);color:var(--ok)}
+.badge.revoked{background:rgba(240,96,112,.15);color:var(--err)}
+
+/* game thumbs in table */
+.appids-cell{display:flex;flex-wrap:wrap;gap:6px;max-width:340px}
+.game-thumb{position:relative;width:100px;height:47px;border-radius:4px;overflow:hidden;background:var(--border);flex-shrink:0;cursor:default}
+.game-thumb img{width:100%;height:100%;object-fit:cover;display:block;transition:opacity .2s}
+.game-thumb img.loading{opacity:0}
+.game-thumb img.loaded {opacity:1}
+.game-thumb .appid-label{position:absolute;inset:0;display:flex;align-items:flex-end;padding:2px 4px;background:linear-gradient(transparent 40%,rgba(0,0,0,.75));font-family:'JetBrains Mono',monospace;font-size:10px;color:#fff;pointer-events:none}
+.game-thumb:hover .game-popup{opacity:1;pointer-events:none}
+.game-popup{position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);width:220px;border-radius:6px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.6);opacity:0;transition:opacity .18s;z-index:20;pointer-events:none;background:var(--surface);border:1px solid var(--border)}
+.game-popup img{width:100%;display:block}
+.game-popup .pop-id{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);padding:4px 8px}
+
+/* popular cards */
+.popular-scroll{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.pop-card{flex-shrink:0;width:130px;cursor:pointer;border-radius:6px;overflow:hidden;border:2px solid transparent;background:var(--bg);transition:border-color .15s,transform .15s;position:relative}
+.pop-card:hover {border-color:var(--accent);transform:translateY(-2px)}
+.pop-card.active{border-color:var(--ok)}
+.pop-card.active::after{content:'✓';position:absolute;top:4px;right:5px;background:var(--ok);color:#000;font-size:10px;font-weight:700;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;line-height:1}
+.pop-card img{width:130px;height:49px;object-fit:cover;display:block}
+.pop-card .pop-name{font-size:11px;color:var(--fg);padding:4px 6px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pop-card .pop-id  {font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--accent);padding:0 6px 5px}
+
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 18px;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.4);transition:transform .25s,opacity .25s;opacity:0;pointer-events:none;white-space:nowrap;z-index:100}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+.config-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.config-row label{font-size:12px;color:var(--muted);min-width:90px}
+.config-row input{flex:1;min-width:180px}
+</style>
+
+<div class="container">
+
+  <div class="header">
+    <h1>⚙ steam-ck <span>Admin</span></h1>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span id="api-status" style="font-size:12px;color:var(--muted)">未連線</span>
+      <button class="btn-secondary btn-sm" onclick="loadKeys()">重新整理</button>
+    </div>
+  </div>
+
+  <!-- 伺服器設定 -->
+  <div class="card">
+    <div class="card-title">伺服器設定</div>
+    <div class="config-row">
+      <label>API URL</label>
+      <input id="api-url" value="http://127.0.0.1:5000" placeholder="https://api.ourdomain.com">
+    </div>
+    <div class="config-row">
+      <label>Admin Token</label>
+      <input id="admin-token" type="password" placeholder="貼上 ADMIN_TOKEN">
+      <button class="btn-primary btn-sm" onclick="saveConfig()">連線</button>
+    </div>
+  </div>
+
+  <!-- 統計 -->
+  <div class="stats">
+    <div class="stat ok"><div class="stat-val" id="s-total">—</div><div class="stat-lbl">金鑰總數</div></div>
+    <div class="stat">  <div class="stat-val" id="s-active">—</div><div class="stat-lbl">有效</div></div>
+    <div class="stat err"><div class="stat-val" id="s-revoked">—</div><div class="stat-lbl">已撤銷</div></div>
+  </div>
+
+  <!-- 熱門推薦 -->
+  <div class="card">
+    <div class="card-title" style="margin-bottom:12px">
+      熱門推薦
+      <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;color:var(--muted);margin-left:6px">點擊選取 / 再點取消，選好後到下方新增金鑰</span>
+    </div>
+    <div class="popular-scroll" id="popular-games"></div>
+  </div>
+
+  <!-- 新增金鑰 -->
+  <div class="card">
+    <div class="card-title">新增金鑰</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>AppID（逗號分隔）</label>
+        <input id="f-appids" placeholder="730,731,732" oninput="renderPopular()">
+      </div>
+      <div class="form-group">
+        <label>備註</label>
+        <input id="f-note" placeholder="例：CS2 完整版">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>金鑰（自動產生或手動貼上）</label>
+        <input id="f-key" class="mono" placeholder="LY-XXXXX-XXXXX-XXXXX-XXXXX" readonly>
+      </div>
+      <div class="form-group">
+        <label style="visibility:hidden">.</label>
+        <div class="form-actions">
+          <button class="btn-secondary" onclick="genKey()">產生金鑰</button>
+          <button class="btn-primary"   onclick="addKey()">加入伺服器</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 金鑰列表 -->
+  <div class="card">
+    <div class="card-title">金鑰列表</div>
+    <div style="margin-bottom:12px">
+      <input id="search" placeholder="搜尋金鑰 / AppID / 備註" oninput="renderTable()" style="max-width:320px">
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>金鑰</th><th>AppIDs</th><th>備註</th><th>建立時間</th><th>狀態</th><th></th>
+        </tr></thead>
+        <tbody id="keys-tbody">
+          <tr><td colspan="6" style="color:var(--muted);text-align:center;padding:28px">尚未連線</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── 熱門遊戲清單 ──────────────────────────────────────────────────────────
+const POPULAR = [
+  { id:730,     name:'Counter-Strike 2' },
+  { id:570,     name:'Dota 2' },
+  { id:578080,  name:'PUBG' },
+  { id:1172470, name:'Apex Legends' },
+  { id:271590,  name:'GTA V' },
+  { id:1091500, name:'Cyberpunk 2077' },
+  { id:1245620, name:'Elden Ring' },
+  { id:1086940, name:"Baldur's Gate 3" },
+  { id:1623730, name:'Palworld' },
+  { id:553850,  name:'Helldivers 2' },
+  { id:2358720, name:'Black Myth: Wukong' },
+  { id:1145360, name:'Hades' },
+  { id:1174180, name:'Red Dead Redemption 2' },
+  { id:582010,  name:'Monster Hunter: World' },
+  { id:252490,  name:'Rust' },
+  { id:381210,  name:'Dead by Daylight' },
+  { id:413150,  name:'Stardew Valley' },
+  { id:105600,  name:'Terraria' },
+  { id:367520,  name:'Hollow Knight' },
+  { id:945360,  name:'Among Us' },
+];
+
+function getSelectedIds() {
+  return (document.getElementById('f-appids').value || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function renderPopular() {
+  const el  = document.getElementById('popular-games');
+  const cur = getSelectedIds();
+  el.innerHTML = POPULAR.map(g => {
+    const img    = `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.id}/capsule_sm_120.jpg`;
+    const active = cur.includes(String(g.id)) ? ' active' : '';
+    return `<div class="pop-card${active}" onclick="toggleGame(${g.id})" title="${g.name}">
+      <img src="${img}" onerror="this.style.opacity='.3'">
+      <div class="pop-name">${g.name}</div>
+      <div class="pop-id">${g.id}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleGame(id) {
+  const inp = document.getElementById('f-appids');
+  const cur = getSelectedIds();
+  const idx = cur.indexOf(String(id));
+  if (idx >= 0) cur.splice(idx, 1); else cur.push(String(id));
+  inp.value = cur.join(',');
+  renderPopular();
+}
+
+// ── 狀態 ──────────────────────────────────────────────────────────────────
+let allKeys = [];
+
+function cfg() {
+  return {
+    url:   (document.getElementById('api-url').value || '').replace(/\/$/, ''),
+    token: document.getElementById('admin-token').value || ''
+  };
+}
+
+function saveConfig() {
+  try {
+    localStorage.setItem('sck-url',   cfg().url);
+    localStorage.setItem('sck-token', cfg().token);
+  } catch(e) {}
+  loadKeys();
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────
+function toast(msg, ok=true) {
+  const t = document.getElementById('toast');
+  t.textContent = (ok ? '✓ ' : '✗ ') + msg;
+  t.style.color = ok ? 'var(--ok)' : 'var(--err)';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── API ───────────────────────────────────────────────────────────────────
+async function api(path, method='GET', body=null) {
+  const { url, token } = cfg();
+  const opts = { method, headers: {'Content-Type':'application/json','X-Admin-Token':token} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url + path, opts);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function loadKeys() {
+  const el = document.getElementById('api-status');
+  try {
+    el.textContent = '連線中…'; el.style.color = 'var(--muted)';
+    allKeys = await api('/api/admin/list_keys');
+    el.textContent = '已連線'; el.style.color = 'var(--ok)';
+    updateStats();
+    renderTable();
+  } catch(e) {
+    el.textContent = '連線失敗'; el.style.color = 'var(--err)';
+    document.getElementById('keys-tbody').innerHTML =
+      `<tr><td colspan="6" style="color:var(--err);text-align:center;padding:28px">${e.message}</td></tr>`;
+  }
+}
+
+function updateStats() {
+  const total   = allKeys.length;
+  const revoked = allKeys.filter(k => k.revoked).length;
+  document.getElementById('s-total').textContent   = total;
+  document.getElementById('s-active').textContent  = total - revoked;
+  document.getElementById('s-revoked').textContent = revoked;
+}
+
+// ── 表格 ──────────────────────────────────────────────────────────────────
+function renderTable() {
+  const q = (document.getElementById('search').value || '').toLowerCase();
+  const rows = allKeys.filter(k =>
+    !q ||
+    k.key.toLowerCase().includes(q) ||
+    (k.appids||'').includes(q) ||
+    (k.note||'').toLowerCase().includes(q)
+  );
+
+  const tbody = document.getElementById('keys-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:28px">找不到符合的金鑰</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(k => {
+    const chips = (k.appids||'').split(',').filter(Boolean).map(a => {
+      const id  = a.trim();
+      const sm  = `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/capsule_sm_120.jpg`;
+      const hdr = `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/header.jpg`;
+      return `<div class="game-thumb" title="AppID ${id}">
+        <img src="${sm}" class="loading" onload="this.classList.replace('loading','loaded')" onerror="this.style.display='none'">
+        <div class="appid-label">${id}</div>
+        <div class="game-popup">
+          <img src="${hdr}" onerror="this.style.display='none'">
+          <div class="pop-id">AppID ${id}</div>
+        </div>
+      </div>`;
+    }).join('');
+    const dt = k.created_at
+      ? new Date(k.created_at * 1000).toLocaleString('zh-TW',
+          {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
+      : '—';
+    const badge     = k.revoked
+      ? '<span class="badge revoked">已撤銷</span>'
+      : '<span class="badge active">有效</span>';
+    const revokeBtn = k.revoked ? '' :
+      `<button class="btn-danger btn-sm" onclick="revokeKey('${k.key}')">撤銷</button>`;
+    return `<tr>
+      <td class="mono" style="user-select:all">${k.key}</td>
+      <td><div class="appids-cell">${chips||'<span style="color:var(--muted)">—</span>'}</div></td>
+      <td style="color:var(--muted)">${k.note||'—'}</td>
+      <td style="color:var(--muted);white-space:nowrap">${dt}</td>
+      <td>${badge}</td>
+      <td style="text-align:right">${revokeBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── 產生金鑰 ─────────────────────────────────────────────────────────────
+function genKey() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const rand  = n => Array.from({length:n}, () => chars[Math.random()*36|0]).join('');
+  const key   = `LY-${rand(5)}-${rand(5)}-${rand(5)}-${rand(5)}`;
+  document.getElementById('f-key').value = key;
+  document.getElementById('f-key').removeAttribute('readonly');
+  toast('請用 keygen.py 產生正確的 HMAC 金鑰後貼入', false);
+}
+
+// ── 新增金鑰 ─────────────────────────────────────────────────────────────
+async function addKey() {
+  const key    = document.getElementById('f-key').value.trim();
+  const appids = document.getElementById('f-appids').value.trim();
+  const note   = document.getElementById('f-note').value.trim();
+  if (!key || !appids) { toast('請填入金鑰與 AppID', false); return; }
+  try {
+    const r = await api('/api/admin/add_key', 'POST', { key, appids, note });
+    if (r.ok) {
+      toast(`已加入 ${key}`);
+      document.getElementById('f-key').value = '';
+      document.getElementById('f-key').setAttribute('readonly', '');
+      document.getElementById('f-appids').value = '';
+      document.getElementById('f-note').value   = '';
+      renderPopular();
+      loadKeys();
+    } else {
+      toast(r.reason || '加入失敗', false);
+    }
+  } catch(e) { toast(e.message, false); }
+}
+
+// ── 撤銷金鑰 ─────────────────────────────────────────────────────────────
+async function revokeKey(key) {
+  if (!confirm(`確定撤銷 ${key}？`)) return;
+  try {
+    await api('/api/admin/revoke_key', 'POST', { key });
+    toast(`已撤銷 ${key}`);
+    loadKeys();
+  } catch(e) { toast(e.message, false); }
+}
+
+// ── 初始化 ────────────────────────────────────────────────────────────────
+renderPopular();
+try {
+  const u = localStorage.getItem('sck-url');
+  const t = localStorage.getItem('sck-token');
+  if (u) document.getElementById('api-url').value   = u;
+  if (t) document.getElementById('admin-token').value = t;
+  if (u && t) loadKeys();
+} catch(e) {}
+</script>
