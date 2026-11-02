@@ -499,6 +499,7 @@ server/.env
 server/*.db
 
 # C++ 建置輸出
+build/
 native/build/
 native/out/
 
