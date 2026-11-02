@@ -5,6 +5,7 @@
 #include <winhttp.h>
 #include <string>
 #include <vector>
+#include <cstdint>
 #include <stdexcept>
 
 #pragma comment(lib, "winhttp.lib")

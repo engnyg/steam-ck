@@ -159,3 +159,23 @@ const osu_auth_api* core_get_auth()
 {
     return g_auth;
 }
+
+void core_inject_depot_keys_to_registry()
+{
+    for (auto& [depot_id, key] : g_depot_keys) {
+        char subkey[128];
+        wsprintfA(subkey, "Software\\Valve\\Steam\\Depots\\%u", depot_id);
+
+        HKEY hk = nullptr;
+        if (RegCreateKeyExA(HKEY_CURRENT_USER, subkey, 0, nullptr,
+                            0, KEY_SET_VALUE, nullptr, &hk, nullptr) == ERROR_SUCCESS) {
+            char hex[65] = {};
+            for (size_t i = 0; i < key.size() && i < 32; i++)
+                wsprintfA(hex + i * 2, "%02X", key[i]);
+            RegSetValueExA(hk, "DecryptionKey", 0, REG_SZ,
+                           reinterpret_cast<const BYTE*>(hex),
+                           static_cast<DWORD>(strlen(hex) + 1));
+            RegCloseKey(hk);
+        }
+    }
+}

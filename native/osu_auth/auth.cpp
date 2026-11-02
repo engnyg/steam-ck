@@ -9,6 +9,7 @@
 #include <ctime>
 #include <cstdio>
 #include <cstring>
+#include <cstdint>
 #include <sstream>
 
 // ── 設定（TODO：填入實際值） ──────────────────────────────────────────────

@@ -17,6 +17,9 @@ void                core_update_unlocked_apps(const int* ids, int count);
 int                 core_get_unlocked_apps(int* out, int max_count);
 const osu_auth_api* core_get_auth();
 
+// depot key 注入（寫入 Steam 登錄檔）
+void core_inject_depot_keys_to_registry();
+
 // hooks.cpp
 void hooks_install();
 void hooks_uninstall();
