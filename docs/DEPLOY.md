@@ -463,7 +463,8 @@ bash update_server.sh all
 | `/auth`             | 加密 OSU_Auth.dll          | `scripts/dist/auth.enc`    |
 | `/depot`            | 加密 depotkeys.json        | `scripts/dist/depot.enc`   |
 | `/xinput1_4.dll`    | Loader DLL（明文）          | `build/xinput_loader/xinput1_4.dll` |
-| `/activate`         | 客戶端啟動腳本（明文）       | `scripts/activate-cdk.ps1` |
+| `/activate`         | 客戶端安裝腳本（明文）       | `scripts/activate-cdk.ps1` |
+| `/uninstall`        | 客戶端卸載腳本（明文）       | `scripts/uninstall.ps1`    |
 
 可以用 Nginx 靜態站、S3 + CloudFront、Cloudflare R2 等任何靜態檔案服務。
 
@@ -490,6 +491,7 @@ cp scripts/dist/auth.enc     /var/www/osu-cdn/auth
 cp scripts/dist/depot.enc    /var/www/osu-cdn/depot
 cp build/xinput_loader/xinput1_4.dll  /var/www/osu-cdn/xinput1_4.dll
 cp scripts/activate-cdk.ps1  /var/www/osu-cdn/activate
+cp scripts/uninstall.ps1     /var/www/osu-cdn/uninstall
 ```
 
 ---
@@ -521,6 +523,21 @@ irm https://cdn.yourdomain.com/activate | iex
 1. 將 `xinput1_4.dll` 放入 Steam 安裝目錄（如 `C:\Program Files (x86)\Steam\`）
 2. 建立 Registry 值：`HKCU\Software\OSU\CDKey` = `LY-XXXXX-XXXXX-XXXXX-XXXXX`
 3. 啟動 Steam
+
+**卸載**
+
+```powershell
+irm https://cdn.yourdomain.com/uninstall | iex
+```
+
+彈出確認對話框，確認後自動：
+1. 關閉 Steam
+2. 刪除 `xinput1_4.dll`
+3. 清除 Registry `HKCU:\Software\OSU`
+4. 刪除 `%APPDATA%\OSU\`
+5. 清除 Steam appcache 中的 payload 快取（3a/3b/3c）
+6. 移除 Windows Defender 排除規則
+7. 詢問是否重新啟動 Steam
 
 ### 修改 activate-cdk.ps1 中的 URL
 
