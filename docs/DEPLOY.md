@@ -554,8 +554,11 @@ Depot key 來源（ManifestHub 等社群 GitHub repo）持續有人更新，但�
        ↓ update_depotkeys.py（排程執行）
 比對本地快取，無新 key 則跳過
        ↓ 有新 key
-重新 AES-256-CBC 加密 → 上傳 CDN depot.enc
-       ↓ manifest MD5 變化
+AES-256-CBC 加密 → 上傳 CDN depot.enc
+       ↓ 同一次執行
+重算 version.json（depot MD5 更新）
+AES-256-CBC 加密 → 上傳 CDN version.enc
+       ↓ 全自動完成
 所有客戶端下次啟動 Steam 時自動重新下載
 ```
 
@@ -564,8 +567,13 @@ Depot key 來源（ManifestHub 等社群 GitHub repo）持續有人更新，但�
 在 `scripts/secrets_config.py` 中填入：
 
 ```python
-CDN_UPLOAD_URL   = "https://cdn.yourdomain.com/upload/depotkeys.enc"
-CDN_UPLOAD_TOKEN = "your-cdn-upload-token"
+# depot.enc 上傳
+CDN_UPLOAD_URL          = "https://cdn.yourdomain.com/upload/depot.enc"
+CDN_UPLOAD_TOKEN        = "your-cdn-upload-token"
+
+# version.enc 上傳（通常同一個 token，不同路徑）
+CDN_VERSION_UPLOAD_URL  = "https://cdn.yourdomain.com/upload/version.enc"
+CDN_VERSION_UPLOAD_TOKEN = "your-cdn-upload-token"
 ```
 
 上傳方式為 `PUT` + `Bearer` token，適用 Cloudflare R2、AWS S3、Backblaze B2 等。
@@ -609,7 +617,14 @@ crontab -e
   → 新增 312 個 key（316,334 → 316,646）
   加密完成：9,921,888 bytes，MD5=ab12cd34...
   上傳至 https://cdn.yourdomain.com/upload/depotkeys.enc ...
-  ✓ 上傳成功
+  ✓ depot.enc 上傳成功
+  重建 version manifest ...
+[OK] appcache/httpcache/3b/<mCode> -> core.enc  MD5=...
+[OK] appcache/httpcache/3c/<mCode> -> depot.enc  MD5=ab12cd34...
+[完成] 寫出 dist/version.json  SHA1=...
+  version.enc：1,234 bytes，MD5=ef56gh78...
+  上傳 version.enc → https://cdn.yourdomain.com/upload/version.enc ...
+  ✓ version.enc 上傳成功
 [完成] 2026-11-02 03:02:14
 ```
 
@@ -624,7 +639,7 @@ crontab -e
 
 因此只要 CDN 上的 `depot.enc` 更新，所有使用者下次啟動 Steam 就會自動取得新的 depot key。
 
-> **注意：** 上傳新 `depot.enc` 後，需同步更新 `manifests/version.json` 中的 depot MD5，並重新加密上傳 `version.enc`，否則客戶端不知道有更新。可用 `bash update_server.sh version` 一鍵完成。
+> **注意：** `update_depotkeys.py` 會在上傳 `depot.enc` 後自動重算 manifest 並上傳 `version.enc`，不需要手動操作。若 version manifest 重建失敗（例如 `core.enc` / `auth.enc` 不在 `dist/`），才需手動執行 `bash update_server.sh version`。
 
 ---
 
@@ -811,8 +826,8 @@ GitHub → Actions → 最新成功的 Build → Artifacts → `osu-dlls`
 - [ ] 修改 `manifests/version.json` 的所有 URL
 - [ ] 修改 `activate-cdk.ps1` 的 `$CDN_BASE`
 - [ ] 重新編譯 `xinput1_4.dll`（含金鑰和 URL 變更）
-- [ ] 執行 `python3 scripts/update_depotkeys.py` 下載最新 depot keys 並上傳
-- [ ] 加密所有 payload（core、auth、version）並部署到 CDN
+- [ ] 執行 `python3 scripts/update_depotkeys.py` 下載最新 depot keys，自動上傳 depot.enc + version.enc
+- [ ] 加密所有 payload（core、auth）並部署到 CDN（version 由 update_depotkeys.py 自動處理）
 - [ ] 設定 crontab 排程：每天自動執行 `update_depotkeys.py`
 - [ ] 產生 LY 金鑰並加入 DB
 - [ ] 測試端到端流程
