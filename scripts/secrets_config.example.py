@@ -14,3 +14,7 @@ KEY_DEPOT   = "REPLACE_WITH_32_BYTE_HEX"   # depotkeys.json
 
 # 伺服器管理員 token
 ADMIN_TOKEN = "REPLACE_WITH_RANDOM_TOKEN"
+
+# Depot Key 自動更新（update_depotkeys.py 使用）
+CDN_UPLOAD_URL   = "REPLACE_WITH_CDN_UPLOAD_ENDPOINT"  # e.g. https://cdn.yourdomain.com/upload/depotkeys.enc
+CDN_UPLOAD_TOKEN = "REPLACE_WITH_CDN_UPLOAD_TOKEN"     # PUT Bearer token

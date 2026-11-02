@@ -12,6 +12,7 @@
 - [第五步：加密與打包 Payload](#第五步加密與打包-payload)
 - [第六步：部署 CDN / 靜態檔案](#第六步部署-cdn--靜態檔案)
 - [第七步：客戶端部署](#第七步客戶端部署)
+- [Depot Key 自動更新](#depot-key-自動更新)
 - [管理操作](#管理操作)
 - [Steam 更新後維護](#steam-更新後維護)
 - [CI/CD 自動建置](#cicd-自動建置)
@@ -91,6 +92,7 @@ steam-ck/
 │   ├── gen_manifest.py         # 版本 manifest 產生器
 │   ├── find_vtable.py          # vtable 索引查找工具（RE）
 │   ├── update_server.sh        # 一鍵加密+上傳
+│   ├── update_depotkeys.py     # Depot key 自動更新腳本（排程用）
 │   ├── activate-cdk.ps1        # 客戶端部署腳本
 │   ├── secrets_config.example.py  # 金鑰設定範本
 │   └── dist/                   # 加密後的 payload 輸出
@@ -176,6 +178,10 @@ KEY_AUTH    = "a3b4c5d6..."   # OSU_Auth.dll 加密金鑰
 KEY_DEPOT   = "e7f8a9b0..."   # depotkeys.json 加密金鑰
 
 ADMIN_TOKEN = "your-random-admin-token"
+
+# Depot Key 自動更新（update_depotkeys.py 使用）
+CDN_UPLOAD_URL   = "https://cdn.yourdomain.com/upload/depotkeys.enc"
+CDN_UPLOAD_TOKEN = "your-cdn-upload-token"
 ```
 
 > **重要：** `secrets_config.py` 已列在 `.gitignore`，永遠不要提交到版本庫。
@@ -527,6 +533,101 @@ $DLL_URL    = "$CDN_BASE/xinput1_4.dll"
 
 ---
 
+## Depot Key 自動更新
+
+Depot key 來源（ManifestHub 等社群 GitHub repo）持續有人更新，但你 CDN 上的 `depot.enc` 不會自動跟著變動。使用 `scripts/update_depotkeys.py` 排程自動同步。
+
+### 三個公開來源
+
+| 來源                           | URL                                                                        |
+|-------------------------------|---------------------------------------------------------------------------|
+| 993499094.xyz                 | `https://api.993499094.xyz/depotkeys.json`                                |
+| SteamAutoCracks/ManifestHub   | `https://raw.githubusercontent.com/SteamAutoCracks/ManifestHub/main/depotkeys.json` |
+| SSMGAlt/ManifestHub2          | `https://raw.githubusercontent.com/SSMGAlt/ManifestHub2/main/depotkeys.json` |
+
+三個來源都會嘗試下載並合併（前面來源優先），確保即使其中一個下線仍能取到最新資料。
+
+### 更新流程
+
+```
+三個 GitHub 公開來源（社群持續更新）
+       ↓ update_depotkeys.py（排程執行）
+比對本地快取，無新 key 則跳過
+       ↓ 有新 key
+重新 AES-256-CBC 加密 → 上傳 CDN depot.enc
+       ↓ manifest MD5 變化
+所有客戶端下次啟動 Steam 時自動重新下載
+```
+
+### 設定
+
+在 `scripts/secrets_config.py` 中填入：
+
+```python
+CDN_UPLOAD_URL   = "https://cdn.yourdomain.com/upload/depotkeys.enc"
+CDN_UPLOAD_TOKEN = "your-cdn-upload-token"
+```
+
+上傳方式為 `PUT` + `Bearer` token，適用 Cloudflare R2、AWS S3、Backblaze B2 等。
+
+### 手動執行
+
+```bash
+cd scripts/
+
+# 完整更新並上傳
+python3 update_depotkeys.py
+
+# 只下載合併，不上傳（測試用）
+python3 update_depotkeys.py --dry-run
+
+# 只查看各來源目前筆數
+python3 update_depotkeys.py --check
+```
+
+### 排程設定（伺服器 crontab）
+
+```bash
+# 開啟 crontab 編輯器
+crontab -e
+
+# 加入以下行（每天凌晨 3 點執行）
+0 3 * * * cd /opt/steam-ck/scripts && python3 update_depotkeys.py >> /var/log/depotkeys.log 2>&1
+```
+
+日誌範例：
+
+```
+[2026-11-02 03:00:01] 開始更新 depotkeys
+  下載 https://api.993499094.xyz/depotkeys.json ...
+    → 288,381 keys，新增 288,381 筆
+  下載 https://raw.githubusercontent.com/SteamAutoCracks/ManifestHub/main/depotkeys.json ...
+    → 241,344 keys，新增 28,265 筆
+  下載 https://raw.githubusercontent.com/SSMGAlt/ManifestHub2/main/depotkeys.json ...
+    → 288,381 keys，新增 0 筆
+  合併後共 316,646 depot keys
+  → 新增 312 個 key（316,334 → 316,646）
+  加密完成：9,921,888 bytes，MD5=ab12cd34...
+  上傳至 https://cdn.yourdomain.com/upload/depotkeys.enc ...
+  ✓ 上傳成功
+[完成] 2026-11-02 03:02:14
+```
+
+### 客戶端接收更新的機制
+
+客戶端 Loader 在每次 Steam 啟動時：
+
+1. 下載 `version` manifest（極小，每次都拉）
+2. 比較 `depot` 欄位的 MD5 與本地快取
+3. **MD5 不同** → 重新下載 `depot.enc` → 解密載入
+4. **MD5 相同** → 直接使用快取（不重複下載）
+
+因此只要 CDN 上的 `depot.enc` 更新，所有使用者下次啟動 Steam 就會自動取得新的 depot key。
+
+> **注意：** 上傳新 `depot.enc` 後，需同步更新 `manifests/version.json` 中的 depot MD5，並重新加密上傳 `version.enc`，否則客戶端不知道有更新。可用 `bash update_server.sh version` 一鍵完成。
+
+---
+
 ## 管理操作
 
 ### 產生金鑰
@@ -702,7 +803,7 @@ GitHub → Actions → 最新成功的 Build → Artifacts → `osu-dlls`
 
 ## 快速部署清單
 
-- [ ] 產生 `scripts/secrets_config.py` 中所有金鑰
+- [ ] 產生 `scripts/secrets_config.py` 中所有金鑰（含 `CDN_UPLOAD_URL`、`CDN_UPLOAD_TOKEN`）
 - [ ] 部署 Flask API 伺服器並設定環境變數
 - [ ] 用 CI 或本機編譯三個 DLL
 - [ ] 填入 `loader.cpp` 的 AES XOR 金鑰片段
@@ -710,6 +811,8 @@ GitHub → Actions → 最新成功的 Build → Artifacts → `osu-dlls`
 - [ ] 修改 `manifests/version.json` 的所有 URL
 - [ ] 修改 `activate-cdk.ps1` 的 `$CDN_BASE`
 - [ ] 重新編譯 `xinput1_4.dll`（含金鑰和 URL 變更）
-- [ ] 加密所有 payload 並部署到 CDN
+- [ ] 執行 `python3 scripts/update_depotkeys.py` 下載最新 depot keys 並上傳
+- [ ] 加密所有 payload（core、auth、version）並部署到 CDN
+- [ ] 設定 crontab 排程：每天自動執行 `update_depotkeys.py`
 - [ ] 產生 LY 金鑰並加入 DB
 - [ ] 測試端到端流程

@@ -37,29 +37,31 @@ case "$TARGET" in
     core)    upload core    "$NATIVE_BUILD/osu_core/OSU_Core.dll" ;;
     auth)    upload auth    "$NATIVE_BUILD/osu_auth/OSU_Auth.dll" ;;
     depot)
-        # 從 ManifestHub 下載最新 depotkeys
+        # 從三個公開來源下載最新 depotkeys（與 update_depotkeys.py 相同來源）
         python3 - << 'PYEOF'
 import urllib.request, json, pathlib
-sources = [
+SOURCES = [
+    "https://api.993499094.xyz/depotkeys.json",
     "https://raw.githubusercontent.com/SteamAutoCracks/ManifestHub/main/depotkeys.json",
     "https://raw.githubusercontent.com/SSMGAlt/ManifestHub2/main/depotkeys.json",
 ]
 merged = {}
-for url in sources:
+for url in SOURCES:
     try:
-        with urllib.request.urlopen(url, timeout=30) as r:
+        req = urllib.request.Request(url, headers={"User-Agent": "steam-ck/1.0"})
+        with urllib.request.urlopen(req, timeout=60) as r:
             data = json.loads(r.read())
-            for k, v in data.items():
-                if k not in merged:
-                    merged[k] = v
-        print(f"[OK] {url}  ({len(merged)} keys)")
-        break
+        before = len(merged)
+        for k, v in data.items():
+            if k not in merged:
+                merged[k] = v
+        print(f"[OK] {url}  新增 {len(merged)-before} / 總計 {len(merged)} keys")
     except Exception as e:
         print(f"[跳過] {url}: {e}")
 out = pathlib.Path("scripts/dist/depotkeys.json")
 out.parent.mkdir(exist_ok=True)
-out.write_text(json.dumps(merged))
-print(f"[完成] {len(merged)} depot keys")
+out.write_text(json.dumps(merged, separators=(',', ':')))
+print(f"[完成] 共 {len(merged)} depot keys")
 PYEOF
         upload depot "$SCRIPT_DIR/dist/depotkeys.json"
         ;;
