@@ -205,12 +205,16 @@ mCode = SHA256( MachineGuid + ComputerName )[0:16]  → 32 hex 字元
 
 ## 八、OSU_Core.dll Hook 規劃
 
-| Hook | 函式 | 行為 |
-|------|------|------|
-| H1 | `IClientUser::BIsSubscribedApp(AppId_t)` | AppIdInOnline → 打 API；其餘查 applist.json |
-| H2 | `IClientUser::GetDepotDecryptionKey(DepotId_t)` | 查 depotkeys.json → 回傳 hex key |
+| Hook | 函式 | VT 索引 | 行為 |
+|------|------|---------|------|
+| H1 | `IClientUser::BIsSubscribedApp` | 171 | AppIdInOnline → 打 API；其餘查 unlocked list |
+| H2 | `IClientUser::GetSubscribedApps` | 172 | 注入 unlocked AppID 到遊戲庫清單 |
+| H3 | Depot key registry 注入 | N/A | 寫入 `HKCU\Software\Valve\Steam\Depots\<id>\DecryptionKey` |
 
-vtable 偏移：pattern scan `steamclient64.dll`，不用固定偏移。
+vtable 搜尋：MSVC x64 RTTI（`.?AVIClientUserMap@@` / `.?AVCUser@@`），跨版本穩定。
+
+> **RE 分析結論**：`GetDepotDecryptionKey` 非 vtable 方法（透過 Steam 內部訊息），
+> `ActivateGameWithKey` 不存在。Depot key 改用 registry 注入。
 
 ---
 
@@ -234,50 +238,52 @@ vtable 偏移：pattern scan `steamclient64.dll`，不用固定偏移。
 
 ## 十、實作階段
 
-### Phase 0 — 伺服器 + 金鑰系統（2-3 天）
+### Phase 0 — 伺服器 + 金鑰系統
 
-- [ ] SQLite DB + `/api/verify_cdkey` + `/api/check_app`
-- [ ] `/api/admin/add_key` + `/api/admin/revoke_key`
-- [ ] `keygen.py`：生成 LY 金鑰 + 寫入伺服器 DB
-- [ ] `encrypt_payload.py`：AES-CBC-zlib 加密工具
-- [ ] 版本 manifest JSON 範本 + 加密上傳腳本
+- [x] SQLite DB + `/api/verify_cdkey` + `/api/check_app`
+- [x] `/api/admin/add_key` + `/api/admin/revoke_key` + `/api/admin/generate_key`
+- [x] `keygen.py`：生成 LY 金鑰 + 寫入伺服器 DB
+- [x] `encrypt_payload.py`：AES-CBC-zlib 加密工具
+- [x] `gen_manifest.py` + `manifests/version.json`
 
-### Phase 1 — xinput1_4.dll（3-4 天）
+### Phase 1 — xinput1_4.dll
 
-- [ ] CMake + MinGW-w64 專案
-- [ ] xinput export 轉發（`.def`）
-- [ ] `<mCode>` 計算（SHA256 機器碼）
-- [ ] WinHTTP GET /version → AES 解密 → 解析 manifest
-- [ ] Hash 比對 → 按需下載各元件
-- [ ] 儲存至 `appcache/httpcache/3[ab]/<mCode>`
-- [ ] 記憶體載入 OSU_Core.dll + OSU_Auth.dll
+- [x] CMake + MinGW-w64 專案 + toolchain
+- [x] xinput export 轉發（`.def`）
+- [x] `<mCode>` 計算（SHA256 機器碼）
+- [x] WinHTTP GET /version → AES 解密 → 解析 manifest
+- [x] Hash 比對 → 按需下載各元件
+- [x] 儲存至 `appcache/httpcache/3[abc]/<mCode>`
+- [x] 反射式記憶體載入 OSU_Core.dll + OSU_Auth.dll（含 pe_loader.hpp）
 
-### Phase 2 — OSU_Auth.dll（2-3 天）
+### Phase 2 — OSU_Auth.dll
 
-- [ ] 讀 registry CDKey
-- [ ] WinHTTP POST /api/verify_cdkey
-- [ ] 本地快取（AES 加密，7 天有效）
-- [ ] 離線 HMAC 備援驗證
+- [x] 讀 registry CDKey（`HKCU\Software\OSU\CDKey`）
+- [x] WinHTTP POST /api/verify_cdkey（含 HMAC 簽章）
+- [x] 本地快取（registry LastOnlineOK，7 天 TTL）
+- [x] 離線 HMAC 備援驗證
+- [x] per-key AppID 綁定（verify_key 回傳 appids 清單）
 
-### Phase 3 — OSU_Core.dll（3-4 天）
+### Phase 3 — OSU_Core.dll
 
-- [ ] MinHook + nlohmann/json
-- [ ] 載入 depotkeys.json
-- [ ] Pattern scan → Hook H1 `BIsSubscribedApp`（含線上驗證分支）
-- [ ] Pattern scan → Hook H2 `GetDepotDecryptionKey`
-- [ ] manifest 注入 depotcache
+- [x] 手動 JSON 解析（無外部相依）
+- [x] 載入 depotkeys.json（從 loader 注入的 blob）
+- [x] RTTI 掃描 → Hook `BIsSubscribedApp`（VT[171]）含線上驗證
+- [x] RTTI 掃描 → Hook `GetSubscribedApps`（VT[172]）遊戲庫注入
+- [x] Depot key 注入至 Steam registry（取代不存在的 vtable hook）
+- [x] 跨 DLL ABI（osu_abi.hpp 函式指標表 + pe_loader.hpp resolve_export）
 
-### Phase 4 — activate-cdk.ps1 整合（1 天）
+### Phase 4 — activate-cdk.ps1 整合
 
-- [ ] 部署 xinput1_4.dll
-- [ ] 寫 CDKey 至 registry
-- [ ] 寫 applist.json
-- [ ] 啟動 Steam
+- [x] 部署 xinput1_4.dll 至 Steam 目錄
+- [x] 寫 CDKey 至 registry
+- [x] UAC 自動提權 + 三重下載備援
+- [x] 啟動 Steam
 
-### Phase 5 — CI / 打包（1-2 天）
+### Phase 5 — CI / 打包
 
-- [ ] GitHub Actions：MinGW build → 加密 → 上傳伺服器
-- [ ] 版本 manifest 自動更新 hash
+- [x] GitHub Actions：MinGW cross-compile → 上傳 artifacts
+- [x] `gen_manifest.py` 自動更新 hash
 
 ---
 
