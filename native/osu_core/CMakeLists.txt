@@ -11,6 +11,7 @@ target_link_libraries(OSU_Core
     winhttp
     bcrypt
     advapi32
+    psapi
     z
     -static-libgcc
     -static-libstdc++
