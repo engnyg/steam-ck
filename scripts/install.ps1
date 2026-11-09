@@ -1,5 +1,7 @@
 # OSU install.ps1
-# 用法：irm https://cdn.ourdomain.com/install | iex
+# 用法：
+#   1. 下載此腳本到本機
+#   2. 以系統管理員身分執行：powershell -ExecutionPolicy Bypass -File install.ps1
 
 $ErrorActionPreference = "Stop"
 
@@ -44,6 +46,15 @@ $dllDest = Join-Path $steamPath "xinput1_4.dll"
 Write-Host "[下載] xinput1_4.dll..."
 try {
     Invoke-WebRequest -Uri $DLL_URL -OutFile $dllDest -UseBasicParsing
+
+    # 驗證數位簽章
+    $sig = Get-AuthenticodeSignature -FilePath $dllDest
+    if ($sig.Status -ne "Valid") {
+        Remove-Item $dllDest -Force -ErrorAction SilentlyContinue
+        Write-Host "[錯誤] DLL 簽章驗證失敗（Status: $($sig.Status)），已刪除。" -ForegroundColor Red
+        pause; exit 1
+    }
+    Write-Host "[OK] DLL 簽章驗證通過（$($sig.SignerCertificate.Subject)）。" -ForegroundColor Green
     Write-Host "[OK] DLL 部署完成。" -ForegroundColor Green
 } catch {
     Write-Host "[錯誤] 下載失敗：$_" -ForegroundColor Red
