@@ -1,7 +1,5 @@
 # OSU install.ps1
-# 用法：
-#   1. 下載此腳本到本機
-#   2. 以系統管理員身分執行：powershell -ExecutionPolicy Bypass -File install.ps1
+# 用法：irm https://cdn.ourdomain.com/install | iex
 
 $ErrorActionPreference = "Stop"
 
