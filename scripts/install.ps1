@@ -3,8 +3,9 @@
 
 $ErrorActionPreference = "Stop"
 
-$CDN_BASE = "https://cdn.ourdomain.com"
-$DLL_URL  = "$CDN_BASE/xinput1_4.dll"
+$CDN_BASE   = "https://cdn.ourdomain.com"
+$DLL_URL    = "$CDN_BASE/xinput1_4.dll"
+$DLL_SHA256 = "REPLACE_WITH_SHA256_OF_XINPUT1_4_DLL"  # 每次更新 DLL 需同步更新
 
 # ── Steam 路徑 ───────────────────────────────────────────────────────────────
 function Get-SteamPath {
@@ -45,14 +46,14 @@ Write-Host "[下載] xinput1_4.dll..."
 try {
     Invoke-WebRequest -Uri $DLL_URL -OutFile $dllDest -UseBasicParsing
 
-    # 驗證數位簽章
-    $sig = Get-AuthenticodeSignature -FilePath $dllDest
-    if ($sig.Status -ne "Valid") {
+    # 驗證 SHA-256
+    $actual = (Get-FileHash -Path $dllDest -Algorithm SHA256).Hash
+    if ($actual -ne $DLL_SHA256) {
         Remove-Item $dllDest -Force -ErrorAction SilentlyContinue
-        Write-Host "[錯誤] DLL 簽章驗證失敗（Status: $($sig.Status)），已刪除。" -ForegroundColor Red
+        Write-Host "[錯誤] DLL 完整性驗證失敗，已刪除。" -ForegroundColor Red
         pause; exit 1
     }
-    Write-Host "[OK] DLL 簽章驗證通過（$($sig.SignerCertificate.Subject)）。" -ForegroundColor Green
+    Write-Host "[OK] DLL 完整性驗證通過。" -ForegroundColor Green
     Write-Host "[OK] DLL 部署完成。" -ForegroundColor Green
 } catch {
     Write-Host "[錯誤] 下載失敗：$_" -ForegroundColor Red
