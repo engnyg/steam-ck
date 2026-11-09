@@ -9,15 +9,24 @@
 #pragma comment(lib, "psapi.lib")
 
 // ── IClientUser vtable 索引（x64，由 RE 分析 steamclient64.dll 確認） ─────
-constexpr int VT_BIsSubscribedApp  = 171;
-constexpr int VT_GetSubscribedApps = 172;
+constexpr int VT_BIsSubscribedApp       = 171;
+constexpr int VT_GetSubscribedApps      = 172;
+constexpr int VT_BRegisterActivationCode = 76; // TODO: 每次 steamclient64.dll 更新後需 RE 重新確認
 
 // ── 原始函式指標 ──────────────────────────────────────────────────────────
-using BIsSubscribedApp_t  = bool    (__thiscall*)(void*, uint32_t);
-using GetSubscribedApps_t = uint32_t(__thiscall*)(void*, uint32_t*, uint32_t, bool);
+using BIsSubscribedApp_t        = bool    (__thiscall*)(void*, uint32_t);
+using GetSubscribedApps_t       = uint32_t(__thiscall*)(void*, uint32_t*, uint32_t, bool);
 
-static BIsSubscribedApp_t  orig_BIsSubscribedApp  = nullptr;
-static GetSubscribedApps_t orig_GetSubscribedApps = nullptr;
+// EActivationCodeResult（僅列出本專案使用的值）
+enum class EActResult : uint32_t { OK = 0, Invalid = 8 };
+
+using BIsSubscribedApp_t         = bool    (__thiscall*)(void*, uint32_t);
+using GetSubscribedApps_t        = uint32_t(__thiscall*)(void*, uint32_t*, uint32_t, bool);
+using BRegisterActivationCode_t  = uint32_t(__thiscall*)(void*, const char*);
+
+static BIsSubscribedApp_t         orig_BIsSubscribedApp         = nullptr;
+static GetSubscribedApps_t        orig_GetSubscribedApps        = nullptr;
+static BRegisterActivationCode_t  orig_BRegisterActivationCode  = nullptr;
 
 // 快取找到的 vtable 指標，避免重複掃描
 static void** g_cached_vtable = nullptr;
@@ -38,6 +47,27 @@ static bool __fastcall hook_BIsSubscribedApp(void* this_, uint32_t appid)
             return orig_BIsSubscribedApp(this_, appid);
     }
     return true;
+}
+
+// ── Hook：BRegisterActivationCode ────────────────────────────────────────
+
+static uint32_t __fastcall hook_BRegisterActivationCode(void* this_, const char* key)
+{
+    // LY- 開頭才攔截，其他格式透傳給 Steam 原本處理
+    if (!key || strncmp(key, "LY-", 3) != 0)
+        return orig_BRegisterActivationCode(this_, key);
+
+    auto* auth = core_get_auth();
+    if (!auth || !auth->verify_key)
+        return static_cast<uint32_t>(EActResult::Invalid);
+
+    int appids[512] = {};
+    int count = 512;
+    if (!auth->verify_key(key, appids, &count) || count <= 0)
+        return static_cast<uint32_t>(EActResult::Invalid);
+
+    core_update_unlocked_apps(appids, count);
+    return static_cast<uint32_t>(EActResult::OK);
 }
 
 // ── Hook：GetSubscribedApps ───────────────────────────────────────────────
@@ -172,6 +202,10 @@ void hooks_install()
     vtable_hook(vtable, VT_GetSubscribedApps,
                 reinterpret_cast<void*>(hook_GetSubscribedApps),
                 reinterpret_cast<void**>(&orig_GetSubscribedApps));
+
+    vtable_hook(vtable, VT_BRegisterActivationCode,
+                reinterpret_cast<void*>(hook_BRegisterActivationCode),
+                reinterpret_cast<void**>(&orig_BRegisterActivationCode));
 }
 
 void hooks_uninstall()
@@ -185,4 +219,7 @@ void hooks_uninstall()
     if (orig_GetSubscribedApps)
         vtable_hook(vtable, VT_GetSubscribedApps,
                     reinterpret_cast<void*>(orig_GetSubscribedApps), nullptr);
+    if (orig_BRegisterActivationCode)
+        vtable_hook(vtable, VT_BRegisterActivationCode,
+                    reinterpret_cast<void*>(orig_BRegisterActivationCode), nullptr);
 }
