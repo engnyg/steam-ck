@@ -600,7 +600,7 @@ CDN_VERSION_UPLOAD_TOKEN = "your-cdn-upload-token"
 ```bash
 cd scripts/
 
-# 完整更新並上傳
+# 完整更新靜態庫並上傳
 python3 update_depotkeys.py
 
 # 只下載合併，不上傳（測試用）
@@ -608,7 +608,25 @@ python3 update_depotkeys.py --dry-run
 
 # 只查看各來源目前筆數
 python3 update_depotkeys.py --check
+
+# 動態查詢單款遊戲（從 ManifestHub 拉 key.vdf）
+python3 update_depotkeys.py --app 730
+
+# 一次查多款
+python3 update_depotkeys.py --app 730,570,1172470
+
+# 若 GitHub API 限速，傳 GitHub PAT 可提高限額
+python3 update_depotkeys.py --app 730 --token ghp_xxxx
 ```
+
+**動態查詢 vs 靜態庫的差別：**
+
+| | 靜態庫（`depotkeys.json`）| 動態查詢（ManifestHub branch）|
+|--|--|--|
+| 資料範圍 | 全部 ~316k depot keys | 指定遊戲的精確 depot keys |
+| Manifest ID | 無 | 有（供 `setManifestid` 用）|
+| 更新頻率 | 每天排程 | 有需要時手動查 |
+| 新遊戲上市 | 要等靜態庫更新 | 立即可查 |
 
 ### 排程設定（伺服器 crontab）
 
